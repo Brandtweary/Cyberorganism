@@ -4,8 +4,9 @@
 //! It provides functionality similar to the TUI keyhandler but adapted for egui.
 
 use eframe::egui;
-use crate::App;
+use crate::{App, Task};
 use crate::commands::{Command, parse_command, execute_command, execute_create_command, execute_add_subtask};
+use crate::gui::rendering::request_input_focus;
 
 /// Handles keyboard shortcuts and input events
 pub struct KeyHandler {
@@ -57,6 +58,9 @@ impl KeyHandler {
                             
                             // Clear the input field
                             *input_text = String::new();
+                            
+                            // Request focus after processing command
+                            request_input_focus(ctx);
                         }
                     }
                 } else if self.shift_pressed {
@@ -111,19 +115,21 @@ impl KeyHandler {
                                 // On input line - parse and execute the command
                                 let command = parse_command(input);
                                 execute_command(app, Some(command));
-                                
-                                // Clear the input field only after executing a command from the input line
-                                *input_text = String::new();
                             },
                             Some(idx) => {
                                 // On a task - edit the task content
                                 if (idx - 1) < app.display_container_state.display_to_id.len() {
                                     let task_id = app.display_container_state.display_to_id[idx - 1];
                                     execute_command(app, Some(Command::Edit(task_id, input)));
-                                    // Don't clear the input field after editing a task
                                 }
                             }
                         }
+                        
+                        // Clear the input field
+                        *input_text = String::new();
+                        
+                        // Request focus after processing command
+                        request_input_focus(ctx);
                     }
                 }
                 handled = true;
@@ -185,7 +191,7 @@ impl KeyHandler {
         app.display_container_state.update_display_order(&app.tasks);
         
         // Request focus for the input field after handling interactions
-        ctx.request_repaint();
+        // ctx.request_repaint();
         
         handled
     }

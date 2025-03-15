@@ -342,17 +342,18 @@ impl GuiApp {
                     // Use a custom text edit with a visible background
                     let text_edit = egui::TextEdit::singleline(&mut self.input_text)
                         .desired_width(f32::INFINITY) // Make it take full width
-                        .hint_text("Enter task or command..."); // Add hint text
+                        .hint_text("Enter task or command...") // Add hint text
+                        .id(egui::Id::new("main_input_field")); // Use a consistent ID
                     
-                    // Request focus on the text edit
+                    // Request focus only during initial startup
                     let response = text_edit.show(ui).response;
+                    if ui.ctx().input(|i| i.time) < 0.5 { // Only during the first 0.5 seconds
+                        response.request_focus();
+                    }
                     
                     // Restore the original visuals
                     ui.visuals_mut().widgets.inactive = original_inactive;
                     ui.visuals_mut().widgets.active = original_active;
-                    
-                    // Always request keyboard focus
-                    response.request_focus();
                     
                     // Handle Enter key
                     if response.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter)) {
@@ -363,12 +364,26 @@ impl GuiApp {
                             self.input_text.clear();
                             
                             // Request focus again after submitting
-                            response.request_focus();
-                        }
+                            response.request_focus();                        }
                     }
                 });
             });
     }
+}
+
+/// Request focus for the main input field
+pub fn request_input_focus(ctx: &egui::Context) {
+    ctx.memory_mut(|mem| {
+        // If we already have focus, don't change it
+        if mem.focus().is_some() {
+            return;
+        }
+        
+        // Request focus for the input field
+        // We use a consistent ID for the input field
+        let input_id = egui::Id::new("main_input_field");
+        mem.request_focus(input_id);
+    });
 }
 
 impl eframe::App for GuiApp {
