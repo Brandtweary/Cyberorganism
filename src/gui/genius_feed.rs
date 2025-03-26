@@ -312,20 +312,6 @@ pub fn render_genius_feed(ui: &mut egui::Ui, api_bridge: &GeniusApiBridge, app_m
             if let Some(response) = api_bridge.last_response() {
                 let mut items = response.items.clone();
                 
-                // EMERGENCY HACKATHON FIX: Filter out problematic items that cause rendering issues
-                // We've identified that items with specific patterns cause zero-width UI issues
-                // For the presentation, we'll completely filter these out
-                items = items.into_iter()
-                    .filter(|item| {
-                        // Filter out items matching the problematic pattern we identified
-                        // (items with attribution format that cause zero-width UI issues)
-                        !(item.description.contains("\n-") && 
-                          item.description.len() > 140 && 
-                          item.description.len() < 170 &&
-                          item.description.contains('\n'))
-                    })
-                    .collect();
-                
                 // Prioritize pinned items by moving them to the top
                 let pinned_item_ids = GeniusFeedState::get_pinned_items();
                 if !pinned_item_ids.is_empty() {
@@ -515,13 +501,22 @@ fn render_genius_item(ui: &mut egui::Ui, item: &GeniusItem, is_focused: bool, it
                         // When not expanded, truncate to first line and add ellipsis if needed
                         let first_line = item.description.lines().next().unwrap_or("").trim().to_string();
                         
-                        // Only add ellipsis if there are multiple lines
-                        if item.description.contains('\n') {
-                            // If text has multiple lines, add ellipsis to indicate more content
-                            first_line + "..."
+                        // Truncate long first lines to a reasonable character limit (60 chars)
+                        // This ensures consistent layout even with very long first lines
+                        let truncated_line = if first_line.len() > 60 {
+                            // Truncate at character boundary and add ellipsis
+                            first_line.chars().take(60).collect::<String>() + "..."
                         } else {
-                            // For single line text, just show it as is
                             first_line
+                        };
+                        
+                        // Only add additional ellipsis if there are multiple lines and we haven't already added one
+                        if item.description.contains('\n') && !truncated_line.ends_with("...") {
+                            // If text has multiple lines, add ellipsis to indicate more content
+                            truncated_line + "..."
+                        } else {
+                            // For single line text or already truncated text, just show it as is
+                            truncated_line
                         }
                     };
                     
