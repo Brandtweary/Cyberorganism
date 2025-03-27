@@ -42,13 +42,13 @@
 #![allow(clippy::items_after_statements)]
 
 //! Display state management for tasks in both TUI and GUI implementations.
-//! 
+//!
 //! # Important Functions
 //! When working with tasks in the UI, you often need to convert between task IDs and display indices:
-//! 
+//!
 //! - Use `DisplayContainerState::get_display_index(task_id)` to get a task's display index from its ID
 //! - Use `DisplayContainerState::get_task_id_by_path(path)` to get a task's ID from its display path
-//! 
+//!
 //! # Display State Management
 //! The display container maintains the mapping between task IDs and their current display order,
 //! taking into account task hierarchy and folding state. Always use the above functions
@@ -324,33 +324,33 @@ impl DisplayContainerState {
             self.sync_input_with_gui = true;
             return true;
         }
-        
+
         // Otherwise, find display index for task and focus on it
         if let Some(id) = task_id {
             if let Some(display_idx) = self.get_display_index(id) {
                 self.focused_index = Some(display_idx);
-                
+
                 // Update input buffer with task content
                 if let Some(task) = tasks.iter().find(|t| t.id == id) {
                     self.set_input(task.content.as_str());
                 } else {
                     self.reset_input();
                 }
-                
+
                 self.request_focus_next_frame = true;
                 self.request_cursor_at_end = true;
                 self.sync_input_with_gui = true;
                 return true;
             }
         }
-        
+
         false
     }
 
     pub fn set_cursor_position(&mut self, position: usize) {
         self.input_cursor = position.min(self.input_value.len());
     }
-    
+
     pub fn get_input_mut(&mut self) -> (&mut String, &mut usize) {
         (&mut self.input_value, &mut self.input_cursor)
     }
@@ -390,25 +390,25 @@ impl DisplayContainerState {
     }
 
     /// Find the nearest task at the same level in the display order
-    /// 
+    ///
     /// For top-level tasks, this finds the nearest top-level task
     /// For subtasks, it uses `find_nearest_sibling` to find siblings under the same parent
-    /// 
+    ///
     /// Returns the task ID if found, None otherwise
     pub fn find_nearest_task_at_same_level(&self, tasks: &[Task], task_id: u32) -> Option<u32> {
         // Find the task
         let task = tasks.iter().find(|t| t.id == task_id)?;
-        
+
         // Check if it's a subtask
         if task.parent_id.is_some() {
             // For subtasks, find the nearest sibling
             return crate::taskstore::operations::find_nearest_sibling(tasks, task_id);
         }
-        
+
         // For top-level tasks, find the nearest top-level task in the display order
         // First, find the index of the task in the display order
         let display_index = self.display_to_id.iter().position(|&id| id == task_id)?;
-        
+
         // Try to find a top-level task above first
         let mut current_index = display_index;
         while current_index > 0 {
@@ -420,7 +420,7 @@ impl DisplayContainerState {
                 }
             }
         }
-        
+
         // If no top-level task above, try to find one below
         let mut current_index = display_index;
         while current_index + 1 < self.display_to_id.len() {
@@ -432,7 +432,7 @@ impl DisplayContainerState {
                 }
             }
         }
-        
+
         // No tasks at the same level found
         None
     }

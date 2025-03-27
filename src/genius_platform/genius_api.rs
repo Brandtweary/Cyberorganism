@@ -1,5 +1,8 @@
 #![allow(dead_code)]
 #![allow(unused_variables)]
+#![allow(clippy::wildcard_imports)]
+#![allow(clippy::cast_precision_loss)]
+#![allow(clippy::option_if_let_else)]
 
 //! Genius API client implementation
 //!
@@ -100,7 +103,7 @@ impl GeniusApiClient {
             .timeout(Duration::from_secs(10))
             .build()
             .unwrap_or_default();
-            
+
         Self {
             base_url: "https://app.productgenius.io".to_string(),
             api_key: None,
@@ -123,7 +126,7 @@ impl GeniusApiClient {
             .timeout(timeout)
             .build()
             .unwrap_or_default();
-            
+
         Self {
             base_url,
             api_key,
@@ -160,7 +163,7 @@ impl GeniusApiClient {
     pub fn api_key(&self) -> Option<String> {
         self.api_key.clone()
     }
-    
+
     /// Get the organization ID
     pub fn organization_id(&self) -> String {
         self.organization_id.clone()
@@ -168,15 +171,18 @@ impl GeniusApiClient {
 
     /// Get the server URL for API requests
     fn get_server_url(&self) -> String {
-        format!("{}/hackathon/{}/feed/{}", 
-            self.base_url, 
-            self.organization_id,
-            self.session_id
+        format!(
+            "{}/hackathon/{}/feed/{}",
+            self.base_url, self.organization_id, self.session_id
         )
     }
 
     /// Query the API asynchronously with a specific page number
-    pub async fn query_with_page(&self, input: &str, page: usize) -> Result<GeniusResponse, GeniusApiError> {
+    pub async fn query_with_page(
+        &self,
+        input: &str,
+        page: usize,
+    ) -> Result<GeniusResponse, GeniusApiError> {
         // When mock-api feature is explicitly enabled, always use mock data
         #[cfg(feature = "mock-api")]
         {
@@ -187,51 +193,60 @@ impl GeniusApiClient {
         #[cfg(not(feature = "mock-api"))]
         {
             // If no API key is provided or it's empty, or organization ID is empty, fall back to mock data
-            if self.api_key.as_ref().is_none_or(|k| k.trim().is_empty()) ||
-               self.organization_id.is_empty() {
+            if self.api_key.as_ref().is_none_or(|k| k.trim().is_empty())
+                || self.organization_id.is_empty()
+            {
                 Ok(self.mock_query(input, page))
             } else {
                 // API key is available, proceed with real API request
                 let api_key = self.api_key.as_ref().unwrap();
                 let server_url = self.get_server_url();
-                
+
                 // Prepare the request body based on the genius-hackathon-skeleton implementation
                 let request_body = serde_json::json!({
                     "search_prompt": input,
                     "page": page,
                     "batch_count": 10
                 });
-                
+
                 // Make the async request
-                let response = match self.http_client.post(&server_url)
+                let response = match self
+                    .http_client
+                    .post(&server_url)
                     .header("Content-Type", "application/json")
                     .header("Authorization", format!("Bearer {api_key}"))
                     .json(&request_body)
                     .send()
-                    .await {
-                        Ok(response) => response,
-                        Err(e) => return Err(GeniusApiError::NetworkError(e.to_string())),
-                    };
-                
+                    .await
+                {
+                    Ok(response) => response,
+                    Err(e) => return Err(GeniusApiError::NetworkError(e.to_string())),
+                };
+
                 // Check if the request was successful
                 if !response.status().is_success() {
                     let status = response.status();
-                    let error_text = response.text().await.unwrap_or_else(|_| "Unknown error".to_string());
-                    return Err(GeniusApiError::ApiError(format!("API returned error: {status} - {error_text}")));
+                    let error_text = response
+                        .text()
+                        .await
+                        .unwrap_or_else(|_| "Unknown error".to_string());
+                    return Err(GeniusApiError::ApiError(format!(
+                        "API returned error: {status} - {error_text}"
+                    )));
                 }
-                
+
                 // Parse the response
                 let response_text = match response.text().await {
                     Ok(text) => text,
                     Err(e) => return Err(GeniusApiError::NetworkError(e.to_string())),
                 };
-                
+
                 // Try to parse the response as JSON
                 let response_json: serde_json::Value = match serde_json::from_str(&response_text) {
                     Ok(json) => json,
                     Err(e) => return Err(GeniusApiError::ParseError(e.to_string())),
                 };
-                
+
                 // Extract the cards from the response
                 if let Some(cards) = response_json.get("cards") {
                     match self.convert_cards_to_items(cards) {
@@ -240,12 +255,14 @@ impl GeniusApiClient {
                                 items,
                                 status: "success".to_string(),
                             });
-                        },
+                        }
                         Err(e) => return Err(e),
                     }
                 }
-                
-                Err(GeniusApiError::ParseError("Response does not contain 'cards' field".to_string()))
+
+                Err(GeniusApiError::ParseError(
+                    "Response does not contain 'cards' field".to_string(),
+                ))
             }
         }
     }
@@ -257,28 +274,31 @@ impl GeniusApiClient {
 
     /// Convert cards from the API response to `GeniusItems`
     #[allow(clippy::unused_self)]
-    fn convert_cards_to_items(&self, cards: &serde_json::Value) -> Result<Vec<GeniusItem>, GeniusApiError> {
+    fn convert_cards_to_items(
+        &self,
+        cards: &serde_json::Value,
+    ) -> Result<Vec<GeniusItem>, GeniusApiError> {
         if let Some(cards_array) = cards.as_array() {
             let mut items = Vec::new();
-            
+
             for card in cards_array {
                 // Extract the card ID
                 let id = match card.get("id") {
                     Some(id) => id.as_str().unwrap_or("unknown").to_string(),
                     None => Uuid::new_v4().to_string(), // Generate a random ID if none is provided
                 };
-                
+
                 // Extract the card content
                 let description = match card.get("content") {
                     Some(content) => content.as_str().unwrap_or("").to_string(),
                     None => continue, // Skip cards without content
                 };
-                
+
                 // Skip empty descriptions
                 if description.trim().is_empty() {
                     continue;
                 }
-                
+
                 // Create a GeniusItem from the card
                 items.push(GeniusItem {
                     id,
@@ -286,10 +306,12 @@ impl GeniusApiClient {
                     metadata: card.clone(),
                 });
             }
-            
+
             Ok(items)
         } else {
-            Err(GeniusApiError::ParseError("Cards is not an array".to_string()))
+            Err(GeniusApiError::ParseError(
+                "Cards is not an array".to_string(),
+            ))
         }
     }
 
@@ -297,28 +319,28 @@ impl GeniusApiClient {
     #[allow(clippy::unused_self)]
     fn mock_query(&self, query: &str, page: usize) -> GeniusResponse {
         let mut items = Vec::new();
-        
+
         // Calculate the starting index based on the page number
         let start_idx = (page - 1) * 10 + 1;
         let end_idx = start_idx + 9;
-        
+
         // Generate 10 mock items with the query text
         for i in start_idx..=end_idx {
             let id = format!("mock-{i}");
             let description = format!("Mock result {i} for query: '{query}' (page {page})");
-            
+
             items.push(GeniusItem {
                 id,
                 description,
                 metadata: serde_json::json!({
-                    "relevance": 0.9 - ((i % 10) as f64 * 0.05),
+                    "relevance": ((i % 10) as f64).mul_add(-0.05, 0.9),
                     "source": "mock-data",
                     "query": query,
                     "page": page,
                 }),
             });
         }
-        
+
         GeniusResponse {
             items,
             status: "success".to_string(),
@@ -329,12 +351,12 @@ impl GeniusApiClient {
 /// Module containing mock implementations for testing
 pub mod mock {
     use super::*;
-    
+
     /// Creates a mock API client that returns predefined responses
     pub fn create_mock_client() -> GeniusApiClient {
         GeniusApiClient::new()
     }
-    
+
     /// Creates a mock response with the given items
     pub fn create_mock_response(items: Vec<GeniusItem>) -> GeniusResponse {
         GeniusResponse {
@@ -347,10 +369,12 @@ pub mod mock {
 /// Utility functions for working with API responses
 pub mod utils {
     use super::*;
-    
+
     /// Extract descriptions from a list of items
     pub fn extract_descriptions(response: &GeniusResponse) -> Vec<String> {
-        response.items.iter()
+        response
+            .items
+            .iter()
             .map(|item| item.description.clone())
             .collect()
     }

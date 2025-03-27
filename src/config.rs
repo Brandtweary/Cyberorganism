@@ -1,8 +1,8 @@
 //! Configuration management for the application.
-//! 
+//!
 //! This module provides functionality for loading and accessing configuration
 //! settings from various sources, including config files and environment variables.
-//! 
+//!
 #![allow(dead_code)]
 
 use config::{Config, ConfigError, File};
@@ -25,11 +25,11 @@ pub struct GeniusConfig {
     /// API key for the Genius Platform
     #[serde(default)]
     pub api_key: Option<String>,
-    
+
     /// Base URL for the Genius API
     #[serde(default = "default_genius_api_url")]
     pub base_url: String,
-    
+
     /// Timeout in seconds for API requests
     #[serde(default = "default_timeout_secs")]
     pub timeout_secs: u64,
@@ -49,7 +49,7 @@ const fn default_timeout_secs() -> u64 {
 static CONFIG: OnceLock<AppConfig> = OnceLock::new();
 
 /// Get the application configuration
-/// 
+///
 /// This function returns a reference to the global configuration instance.
 /// If the configuration hasn't been loaded yet, it will attempt to load it.
 pub fn get_config() -> &'static AppConfig {
@@ -68,7 +68,7 @@ pub fn get_config() -> &'static AppConfig {
 }
 
 /// Load the configuration from various sources
-/// 
+///
 /// This function loads configuration from the following sources, in order:
 /// 1. Default values
 /// 2. Configuration file in the system config directory
@@ -79,24 +79,24 @@ fn load_config() -> Result<AppConfig, ConfigError> {
         // Start with default values
         .set_default("genius.base_url", default_genius_api_url())?
         .set_default("genius.timeout_secs", default_timeout_secs())?;
-    
+
     // Try to load from system config directory
     if let Some(config_path) = get_system_config_path() {
         builder = builder.add_source(File::from(config_path).required(false));
     }
-    
+
     // Try to load from current directory
     builder = builder.add_source(File::with_name("config").required(false));
-    
+
     // Add environment variables (prefixed with "CYBERORGANISM_")
     builder = builder.add_source(config::Environment::with_prefix("CYBERORGANISM").separator("_"));
-    
+
     // Build the configuration
     let config = builder.build()?;
-    
+
     // Deserialize the configuration
     let app_config: AppConfig = config.try_deserialize()?;
-    
+
     Ok(app_config)
 }
 
@@ -104,17 +104,17 @@ fn load_config() -> Result<AppConfig, ConfigError> {
 fn get_system_config_path() -> Option<PathBuf> {
     // Get the project directories
     let proj_dirs = ProjectDirs::from("com", "cyberorganism", "cyberorganism")?;
-    
+
     // Create the config directory if it doesn't exist
     let config_dir = proj_dirs.config_dir();
     std::fs::create_dir_all(config_dir).ok()?;
-    
+
     // Return the path to the config file
     Some(config_dir.join("config.toml"))
 }
 
 /// Initialize the configuration system
-/// 
+///
 /// This function should be called early in the application startup process
 /// to ensure that the configuration is loaded before it's needed.
 pub fn init() {

@@ -289,7 +289,10 @@ fn focus_task(app: &mut App, query: &str) -> FocusResult {
         let task = &app.tasks[index];
         let content = task.content.clone();
 
-        if app.display_container_state.focus_task_and_update_input(Some(task.id), &app.tasks) {
+        if app
+            .display_container_state
+            .focus_task_and_update_input(Some(task.id), &app.tasks)
+        {
             FocusResult::Focused { content }
         } else {
             FocusResult::NoMatchingTask
@@ -813,9 +816,7 @@ mod tests {
         let mut app = setup_test_app();
         app.display_container_state.update_display_order(&app.tasks);
         let result = focus_task(&mut app, "Buy groceries");
-        assert!(
-            matches!(result, FocusResult::Focused { content } if content == "Buy groceries")
-        );
+        assert!(matches!(result, FocusResult::Focused { content } if content == "Buy groceries"));
     }
 
     #[test]
@@ -946,8 +947,7 @@ mod tests {
 
         // Verify the child task is actually deleted
         assert!(
-            !app.tasks
-                .iter().any(|t| t.content == "Child task"),
+            !app.tasks.iter().any(|t| t.content == "Child task"),
             "Child task should be deleted"
         );
     }
