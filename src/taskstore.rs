@@ -285,7 +285,7 @@ impl TaskBuilder {
         Self {
             task: Task {
                 id,
-                content: format!("Task {}", id),
+                content: format!("Task {id}"),
                 created_at: Utc::now(),
                 container: TaskContainer::Taskpad,
                 status: TaskStatus::Todo,

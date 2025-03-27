@@ -55,7 +55,7 @@ pub fn initialize_from_env() -> bool {
     // Load .env file if it exists
     match dotenv() {
         Ok(_) => println!("[DEBUG] Loaded environment variables from .env file"),
-        Err(e) => println!("[DEBUG] Could not load .env file: {}", e),
+        Err(e) => println!("[DEBUG] Could not load .env file: {e}"),
     }
     
     let api_key = env::var("GENIUS_API_KEY").ok();
@@ -64,14 +64,14 @@ pub fn initialize_from_env() -> bool {
     println!("[DEBUG] GENIUS_API_KEY present: {}", api_key.is_some());
     println!("[DEBUG] GENIUS_ORGANIZATION_ID present: {}", org_id.is_some());
     
-    if let (Some(api_key), Some(org_id)) = (api_key.clone(), org_id.clone()) {
+    if let (Some(api_key), Some(org_id)) = (api_key, org_id) {
         if api_key.trim().is_empty() || org_id.trim().is_empty() {
             println!("[DEBUG] API key or organization ID is empty");
             return false;
         }
         
         println!("[DEBUG] Configuring API bridge with API key and organization ID");
-        println!("[DEBUG] Organization ID: '{}'", org_id);
+        println!("[DEBUG] Organization ID: '{org_id}'");
         
         // Configure the bridge asynchronously
         #[allow(clippy::await_holding_lock, clippy::significant_drop_tightening)]

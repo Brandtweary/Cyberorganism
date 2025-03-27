@@ -17,7 +17,7 @@ pub struct GeniusApiBridge {
     inner: Arc<Mutex<GeniusApiBridgeInner>>,
 }
 
-/// Inner implementation of the GeniusApiBridge
+/// Inner implementation of the `GeniusApiBridge`
 struct GeniusApiBridgeInner {
     /// The API client used to make requests
     api_client: GeniusApiClient,
@@ -110,8 +110,6 @@ impl GeniusApiBridge {
         // Update state based on the result
         match &result {
             Ok(response) => {
-                println!("[DEBUG] GeniusApiBridge: Query successful, received {} items", response.items.len());
-                
                 // Store the response
                 inner.last_response = Some(response.clone());
                 
@@ -123,7 +121,7 @@ impl GeniusApiBridge {
                 }
             },
             Err(e) => {
-                println!("[DEBUG] GeniusApiBridge: Query failed: {}", e);
+                println!("[DEBUG] GeniusApiBridge: Query failed: {e}");
             }
         }
         
@@ -137,17 +135,12 @@ impl GeniusApiBridge {
     pub async fn load_next_page(&self) -> Result<GeniusResponse, GeniusApiError> {
         let mut inner = self.inner.lock().await;
         
-        println!("[DEBUG] GeniusApiBridge: load_next_page() called (current_page: {}, current_query: '{}')", 
-            inner.current_page, inner.current_query);
-            
         if inner.current_query.is_empty() {
-            println!("[DEBUG] GeniusApiBridge: load_next_page() failed - empty query");
             return Err(GeniusApiError::Other("No current query to load more results for".to_string()));
         }
         
         // Increment the page number
         inner.current_page += 1;
-        println!("[DEBUG] GeniusApiBridge: Incrementing page to {}", inner.current_page);
         
         // Create local copies of the values we need
         let query = inner.current_query.clone();
@@ -165,8 +158,6 @@ impl GeniusApiBridge {
         // Update state based on the result
         match &result {
             Ok(response) => {
-                println!("[DEBUG] GeniusApiBridge: load_next_page() succeeded - got {} items", response.items.len());
-                
                 // Store the response
                 inner.last_response = Some(response.clone());
                 
@@ -178,7 +169,7 @@ impl GeniusApiBridge {
                 }
             },
             Err(e) => {
-                println!("[DEBUG] GeniusApiBridge: load_next_page() failed - {}", e);
+                println!("[DEBUG] GeniusApiBridge: load_next_page() failed - {e}");
             }
         }
         
@@ -198,8 +189,6 @@ impl GeniusApiBridge {
         }
         
         let inner = self.inner.lock().await;
-        
-        println!("[DEBUG] GeniusApiBridge: Executing query: '{}' (page {})", query, page);
         
         // Execute the query using the API client with the specified page
         // We clone the API client to avoid holding the lock during the API call
@@ -348,7 +337,6 @@ pub mod factory {
         }
     }
 }
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -360,8 +348,8 @@ mod tests {
         let mut items = Vec::new();
         for i in 1..=count {
             items.push(GeniusItem {
-                id: format!("test-{}", i),
-                description: format!("Test result {} for query: '{}'", i, query),
+                id: format!("test-{i}"),
+                description: format!("Test result {i} for query: '{query}'"),
                 metadata: serde_json::json!({
                     "test": true,
                     "index": i,

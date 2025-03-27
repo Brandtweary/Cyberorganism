@@ -489,8 +489,7 @@ mod tests {
     /// - When checking activity log messages, always use `activity_log.latest_message()`
     ///   instead of trying to access the log entries directly. The ActivityLog struct
     ///   provides this method specifically for getting the most recent message.
-    /// - Container names in messages are always lowercase (e.g., "taskpad" not "Taskpad")
-
+    /// - Container names in messages are always lowercase (e.g., "taskpad", not "Taskpad")
     fn setup_test_app() -> App {
         let temp_dir = tempdir().expect("Failed to create temp directory");
         let tasks_file = temp_dir
@@ -500,8 +499,10 @@ mod tests {
             .unwrap()
             .to_string();
 
-        let mut app = App::default();
-        app.tasks_file = tasks_file;
+        let mut app = App {
+            tasks_file,
+            ..Default::default()
+        };
         app.add_task(Task::new(1, "Buy groceries".to_string()));
         app.add_task(Task::new(2, "Call dentist".to_string()));
         app.add_task(Task::new(3, "Write report".to_string()));
@@ -703,7 +704,7 @@ mod tests {
         assert_eq!(app.tasks[0].container, TaskContainer::Taskpad);
         assert_eq!(
             app.activity_log.latest_message().unwrap(),
-            &format!("Moved task to taskpad: {}", content)
+            &format!("Moved task to taskpad: {content}")
         );
     }
 
@@ -733,7 +734,7 @@ mod tests {
         assert_eq!(app.tasks[0].container, TaskContainer::Backburner);
         assert_eq!(
             app.activity_log.latest_message().unwrap(),
-            &format!("Moved task to backburner: {}", content)
+            &format!("Moved task to backburner: {content}")
         );
     }
 
@@ -764,7 +765,7 @@ mod tests {
         assert_eq!(app.tasks[0].container, TaskContainer::Shelved);
         assert_eq!(
             app.activity_log.latest_message().unwrap(),
-            &format!("Moved task to shelved: {}", content)
+            &format!("Moved task to shelved: {content}")
         );
     }
 
@@ -791,19 +792,19 @@ mod tests {
         execute_move_to_taskpad_command(&mut app, "Nonexistent task");
         assert_eq!(
             app.activity_log.latest_message().unwrap(),
-            "No matching task found"
+            format!("No matching task found")
         );
 
         execute_move_to_backburner_command(&mut app, "Nonexistent task");
         assert_eq!(
             app.activity_log.latest_message().unwrap(),
-            "No matching task found"
+            format!("No matching task found")
         );
 
         execute_move_to_shelved_command(&mut app, "Nonexistent task");
         assert_eq!(
             app.activity_log.latest_message().unwrap(),
-            "No matching task found"
+            format!("No matching task found")
         );
     }
 
@@ -945,10 +946,8 @@ mod tests {
 
         // Verify the child task is actually deleted
         assert!(
-            app.tasks
-                .iter()
-                .find(|t| t.content == "Child task")
-                .is_none(),
+            !app.tasks
+                .iter().any(|t| t.content == "Child task"),
             "Child task should be deleted"
         );
     }
