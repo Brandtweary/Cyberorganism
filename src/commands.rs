@@ -14,8 +14,6 @@ use crate::taskstore::{
 pub enum AppMode {
     /// Default mode for PKM task management
     Pkm,
-    /// Mode for interacting with Genius Feed
-    Feed,
 }
 
 impl Default for AppMode {
@@ -401,25 +399,21 @@ fn execute_toggle_command(app: &mut App, query: &str) {
     }
 }
 
-/// Toggles the application mode and logs the change
-pub fn toggle_app_mode(app: &mut App, current_mode: AppMode) -> AppMode {
-    let new_mode = match current_mode {
-        AppMode::Pkm => AppMode::Feed,
-        AppMode::Feed => AppMode::Pkm,
-    };
-    
-    app.app_mode = new_mode;
-    
-    // Log the mode change
-    let mode_name = match new_mode {
-        AppMode::Pkm => "PKM",
-        AppMode::Feed => "Feed",
-    };
-    
-    app.activity_log.add_message(format!("Switched to {} mode", mode_name));
-    
-    new_mode
+/// Toggle the application mode (now a no-op since we only have one mode)
+pub fn toggle_app_mode(_app: &mut App, _current_mode: AppMode) -> AppMode {
+    // Since we only have PKM mode now, always return PKM
+    AppMode::Pkm
 }
+
+// Commenting out unused function to fix warning
+/*
+/// Get a string representation of the current app mode
+pub fn app_mode_to_string(mode: AppMode) -> &'static str {
+    match mode {
+        AppMode::Pkm => "PKM",
+    }
+}
+*/
 
 /// Executes a command, updating the app state as needed
 pub fn execute_command(app: &mut App, command: Option<Command>) -> Option<u32> {
@@ -818,10 +812,9 @@ mod tests {
         let mut app = setup_test_app();
         app.display_container_state.update_display_order(&app.tasks);
         let result = focus_task(&mut app, "Buy groceries");
-        assert!(matches!(
-            result,
-            FocusResult::Focused { content } if content == "Buy groceries"
-        ));
+        assert!(
+            matches!(result, FocusResult::Focused { content } if content == "Buy groceries")
+        );
     }
 
     #[test]
@@ -985,7 +978,7 @@ mod tests {
         // Verify activity log message
         assert_eq!(
             app.activity_log.latest_message(),
-            Some(format!("Toggled task: {}", query).as_str())
+            Some(format!("Toggled task: {}", app.tasks[task_index].content).as_str())
         );
     }
 

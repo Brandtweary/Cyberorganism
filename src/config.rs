@@ -41,7 +41,7 @@ fn default_genius_api_url() -> String {
 }
 
 /// Default timeout in seconds
-fn default_timeout_secs() -> u64 {
+const fn default_timeout_secs() -> u64 {
     10
 }
 
@@ -58,7 +58,7 @@ pub fn get_config() -> &'static AppConfig {
         match load_config() {
             Ok(config) => config,
             Err(e) => {
-                eprintln!("Failed to load configuration: {}", e);
+                eprintln!("Failed to load configuration: {e}");
                 AppConfig {
                     genius: GeniusConfig::default(),
                 }

@@ -2,26 +2,33 @@
 //! 
 //! This module provides integration with the Genius Platform API,
 //! allowing the application to query the API and display results.
+//! Currently not used in the UI but maintained for future integration.
 
 #![allow(dead_code)]
 
 pub mod genius_api;
 pub mod genius_api_bridge;
-pub mod genius_keyhandler;
+// Removed genius_keyhandler module as it's been moved to archive
 
 // Re-export key types for convenience
-pub use genius_api::GeniusItem;
+// Commenting out unused re-export to fix warning
+// pub use genius_api::GeniusItem;
 pub use genius_api_bridge::GeniusApiBridge;
+// Removing unused factory re-export
 
 use std::sync::Mutex;
 use lazy_static::lazy_static;
 use std::env;
 use dotenv::dotenv;
+use tokio::runtime::Runtime;
 
 // Create a global instance of GeniusApiBridge
 // This allows us to have a single instance that's shared throughout the application
 lazy_static! {
     pub static ref GENIUS_API_BRIDGE: Mutex<GeniusApiBridge> = Mutex::new(GeniusApiBridge::new());
+    
+    // Create a Tokio runtime for async operations
+    pub static ref TOKIO_RUNTIME: Runtime = Runtime::new().expect("Failed to create Tokio runtime");
 }
 
 /// Get a reference to the global GeniusApiBridge
@@ -66,8 +73,13 @@ pub fn initialize_from_env() -> bool {
         println!("[DEBUG] Configuring API bridge with API key and organization ID");
         println!("[DEBUG] Organization ID: '{}'", org_id);
         
-        let mut bridge = get_api_bridge();
-        bridge.configure(&api_key, &org_id);
+        // Configure the bridge asynchronously
+        #[allow(clippy::await_holding_lock, clippy::significant_drop_tightening)]
+        TOKIO_RUNTIME.block_on(async {
+            let bridge = get_api_bridge();
+            bridge.configure(&api_key, &org_id).await;
+        });
+        
         true
     } else {
         println!("[DEBUG] Missing environment variables for Genius API");
@@ -78,7 +90,11 @@ pub fn initialize_from_env() -> bool {
 /// Initialize the Genius API with the provided credentials
 ///
 /// This function configures the API bridge with the given API key and organization ID.
+#[allow(clippy::await_holding_lock, clippy::significant_drop_tightening)]
 pub fn initialize(api_key: &str, organization_id: &str) {
-    let mut bridge = get_api_bridge();
-    bridge.configure(api_key, organization_id);
+    // Configure the bridge asynchronously
+    TOKIO_RUNTIME.block_on(async {
+        let bridge = get_api_bridge();
+        bridge.configure(api_key, organization_id).await;
+    });
 }

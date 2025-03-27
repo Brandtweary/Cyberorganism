@@ -22,8 +22,9 @@ config = "0.13"        # Configuration management
 directories = "5.0"    # Find platform-specific directories
 dotenv = "0.15.0"      # For loading environment variables from .env files
 
-# HTTP client for API requests
-reqwest = { version = "0.11", features = ["json", "blocking"] }
+# Async runtime and HTTP client
+tokio = { version = "1.28", features = ["full"] }  # Async runtime
+reqwest = { version = "0.11", features = ["json"] }  # Async HTTP client
 uuid = { version = "1.7", features = ["v4"] }  # For generating UUIDs
 
 # TUI dependencies (kept for reference)

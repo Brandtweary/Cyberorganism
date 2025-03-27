@@ -65,6 +65,7 @@ use crate::taskstore::Task;
 /// IMPORTANT: The `display_to_id` list contains only visible tasks based on the current
 /// folding state. Whenever the folding state (`folded_tasks`) is modified,
 /// `update_display_order` must be called to ensure the display list is synchronized.
+#[allow(clippy::struct_excessive_bools)]
 #[derive(Debug)]
 pub struct DisplayContainerState {
     /// List of task IDs for top-level tasks in the current container.
@@ -274,7 +275,7 @@ impl DisplayContainerState {
         &self.input_value
     }
 
-    pub fn input_cursor(&self) -> usize {
+    pub const fn input_cursor(&self) -> usize {
         self.input_cursor
     }
 
@@ -301,7 +302,7 @@ impl DisplayContainerState {
             Some(0) => self.reset_input(),
             _ => {
                 if let Some(content) = self.get_focused_task_content(tasks) {
-                    self.set_input(&content);
+                    self.set_input(content);
                 } else {
                     // If focused task doesn't exist anymore, reset to 0
                     self.focused_index = Some(0);
@@ -331,7 +332,7 @@ impl DisplayContainerState {
                 
                 // Update input buffer with task content
                 if let Some(task) = tasks.iter().find(|t| t.id == id) {
-                    self.set_input(&task.content);
+                    self.set_input(task.content.as_str());
                 } else {
                     self.reset_input();
                 }
@@ -391,7 +392,7 @@ impl DisplayContainerState {
     /// Find the nearest task at the same level in the display order
     /// 
     /// For top-level tasks, this finds the nearest top-level task
-    /// For subtasks, it uses find_nearest_sibling to find siblings under the same parent
+    /// For subtasks, it uses `find_nearest_sibling` to find siblings under the same parent
     /// 
     /// Returns the task ID if found, None otherwise
     pub fn find_nearest_task_at_same_level(&self, tasks: &[Task], task_id: u32) -> Option<u32> {

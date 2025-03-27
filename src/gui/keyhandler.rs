@@ -27,8 +27,7 @@
 
 use eframe::egui;
 use crate::App;
-use crate::commands::{Command, parse_command, execute_command, execute_create_command, execute_add_subtask, toggle_app_mode};
-use crate::gui::genius_feed;
+use crate::commands::{Command, parse_command, execute_command, execute_create_command, execute_add_subtask};
 
 /// Handles keyboard shortcuts and input events
 pub struct KeyHandler {
@@ -40,7 +39,7 @@ pub struct KeyHandler {
 
 impl KeyHandler {
     /// Create a new key handler
-    pub fn new() -> Self {
+    pub const fn new() -> Self {
         Self {
             shift_pressed: false,
             ctrl_pressed: false,
@@ -57,27 +56,18 @@ impl KeyHandler {
     }
     
     /// Handle keyboard input for task creation or editing
+    #[allow(clippy::too_many_lines, clippy::cognitive_complexity)]
     pub fn handle_input(&mut self, app: &mut App, ctx: &egui::Context, input_text: &mut String) -> bool {
         let mut handled = false;
         
         // Update modifier keys
         self.update_modifiers(ctx);
         
-        // Check if we should query the API based on input changes and rate limiting
-        genius_feed::maybe_query_api(app, input_text);
-        
         // Check for key presses
         ctx.input(|i| {
             // TODO: Tab key navigation is problematic in egui and causes focus issues.
             // We need to investigate a proper fix for tab navigation in the future.
             // For now, we're using Ctrl+Space instead of Shift+Tab for mode switching.
-            
-            // Check for Ctrl+Space to toggle mode
-            if i.key_pressed(egui::Key::Space) && self.ctrl_pressed {
-                app.app_mode = toggle_app_mode(app, app.app_mode);
-                handled = true;
-                return;
-            }
             
             // Handle Enter key with modifiers
             if i.key_pressed(egui::Key::Enter) {
@@ -154,7 +144,7 @@ impl KeyHandler {
                         match app.display_container_state.focused_index {
                             Some(0) | None => {
                                 // On input line - parse and execute the command
-                                let command = parse_command(input.clone());
+                                let command = parse_command(input);
                                 execute_command(app, Some(command));
                                 
                                 // Explicitly refocus on the input line after command execution
@@ -240,10 +230,10 @@ impl KeyHandler {
                             // Calculate the task ID to focus on
                             let task_id = if index == 0 {
                                 // Moving from input line (index 0) to first task
-                                if !app.display_container_state.display_to_id.is_empty() {
-                                    Some(app.display_container_state.display_to_id[0])
-                                } else {
+                                if app.display_container_state.display_to_id.is_empty() {
                                     None
+                                } else {
+                                    Some(app.display_container_state.display_to_id[0])
                                 }
                             } else if (index - 1) < app.display_container_state.display_to_id.len() - 1 {
                                 // Moving to next task (index - 1 + 1 because display_to_id is 0-indexed)

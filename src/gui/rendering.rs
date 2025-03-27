@@ -8,8 +8,6 @@ use crate::App;
 use crate::display_container::TaskIndex;
 use crate::taskstore::{Task, TaskStatus};
 use crate::gui::keyhandler::KeyHandler;
-use crate::genius_platform::GeniusApiBridge;
-use crate::genius_platform::genius_keyhandler::GeniusKeyHandler;
 use crate::commands::AppMode;
 
 /// The primary accent color used throughout the UI
@@ -39,8 +37,8 @@ pub fn run_app(app: App) -> Result<(), eframe::Error> {
             
             // Increase font size for all text styles
             let mut style = (*cc.egui_ctx.style()).clone();
-            for (_, font_id) in style.text_styles.iter_mut() {
-                font_id.size *= 1.2; // Increase font size by 20%
+            for font_id in style.text_styles.values_mut() {
+                font_id.size *= 1.2;
             }
             cc.egui_ctx.set_style(style);
             
@@ -57,8 +55,6 @@ struct GuiApp {
     input_text: String,
     /// Key handler for input processing
     key_handler: KeyHandler,
-    /// Genius Feed key handler for feed mode input processing
-    genius_key_handler: GeniusKeyHandler,
 }
 
 impl GuiApp {
@@ -67,7 +63,6 @@ impl GuiApp {
             app,
             input_text: String::new(),
             key_handler: KeyHandler::new(),
-            genius_key_handler: GeniusKeyHandler::new(),
         }
     }
     
@@ -81,13 +76,13 @@ impl GuiApp {
         }
         
         // Add task index
-        task_text.push_str(&format!("{}", task_index));
+        task_text.push_str(&format!("{task_index}"));
         
         // Add period after index for top-level tasks
         if depth == 0 {
             task_text.push_str(". ");
         } else {
-            task_text.push_str(" ");
+            task_text.push(' ');
         }
         
         // Note: We no longer add completion status indicator here since we'll use the Checkbox widget
@@ -257,7 +252,7 @@ impl GuiApp {
                                 
                                 // Find the task to update input text
                                 if let Some(task) = self.app.tasks.iter().find(|t| t.id == task_to_complete.unwrap_or(0)) {
-                                    self.input_text = task.content.clone();
+                                    self.input_text.clone_from(&task.content);
                                 }
                             }
                             
@@ -324,22 +319,21 @@ impl GuiApp {
     }
     
     /// Render the help text
+    #[allow(clippy::unused_self)]
     fn render_help(&self, ui: &mut egui::Ui) {
-        if self.app.show_help {
-            // Add consistent margins to match other UI elements
-            egui::Frame::none()
-                .inner_margin(egui::style::Margin::symmetric(8.0, 4.0))
-                .show(ui, |ui| {
-                    // Use a label with explicit wrapping to ensure text stays within bounds
-                    ui.add(
-                        egui::Label::new(
-                            egui::RichText::new("Help: Enter = execute | Shift+Enter = subtask | Ctrl+Enter = PKM: toggle done, Feed: toggle pinned | Ctrl+Up/Down = expand/collapse | Ctrl+Space = switch mode")
-                                .color(ACCENT_COLOR)
-                        )
-                        .wrap(true) // Enable text wrapping
-                    );
-                });
-        }
+        // Add a margin to match the task list
+        egui::Frame::none()
+            .inner_margin(egui::style::Margin::symmetric(8.0, 4.0))
+            .show(ui, |ui| {
+                // Use a label with explicit wrapping to ensure text stays within bounds
+                ui.add(
+                    egui::Label::new(
+                        egui::RichText::new("Help: Enter = execute | Shift+Enter = subtask | Ctrl+Enter = toggle done | Ctrl+Up/Down = expand/collapse")
+                            .color(ACCENT_COLOR)
+                    )
+                    .wrap(true) // Enable text wrapping
+                );
+            });
     }
     
     /// Render the input field
@@ -351,8 +345,8 @@ impl GuiApp {
                 ui.vertical(|ui| {
                     // Customize the visuals to make the border always visible
                     // Store the original visuals
-                    let original_inactive = ui.visuals().widgets.inactive.clone();
-                    let original_active = ui.visuals().widgets.active.clone();
+                    let original_inactive = ui.visuals().widgets.inactive;
+                    let original_active = ui.visuals().widgets.active;
                     
                     // Modify the visuals for this scope
                     ui.visuals_mut().widgets.inactive.bg_stroke = egui::Stroke::new(1.0, ACCENT_COLOR);
@@ -364,11 +358,7 @@ impl GuiApp {
                     // Use a custom text edit with a visible background
                     let text_edit = egui::TextEdit::singleline(&mut self.input_text)
                         .desired_width(ui.available_width()) // Make it take full available width
-                        .hint_text(if let AppMode::Feed = self.app.app_mode {
-                            "Enter search query for Genius Feed..."
-                        } else {
-                            "Enter task or command..."
-                        }) // Add hint text
+                        .hint_text("Enter task or command...")
                         .id(egui::Id::new("main_input_field")); // Use a consistent ID
                     
                     // Request focus on the text edit
@@ -416,87 +406,68 @@ impl GuiApp {
                     // Do not handle Enter key here to avoid conflicts
                     
                     // Display current mode below the input field
-                    let mode_text = match self.app.app_mode {
-                        AppMode::Pkm => "PKM Mode",
-                        AppMode::Feed => "Feed Mode",
-                    };
+                    let mode_text = "PKM Mode";
                     ui.label(egui::RichText::new(mode_text).small().weak());
                 });
             });
-    }
-    
-    /// Render the genius feed
-    fn render_genius_feed(&self, ui: &mut egui::Ui) {
-        // Always show the genius feed, but interaction is only enabled in Feed mode
-        crate::gui::genius_feed::render_genius_feed(ui, &GeniusApiBridge::global(), self.app.app_mode);
     }
 }
 
 impl eframe::App for GuiApp {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
-        // Update key handler modifiers
-        self.key_handler.update_modifiers(ctx);
-        self.genius_key_handler.update_modifiers(ctx);
+        // Handle keyboard input
+        // We don't need to check the return value since we're only in PKM mode now
+        self.key_handler.handle_input(&mut self.app, ctx, &mut self.input_text);
         
-        // Process keyboard input based on current mode
-        let input_handled = match self.app.app_mode {
-            AppMode::Pkm => self.key_handler.handle_input(&mut self.app, ctx, &mut self.input_text),
-            AppMode::Feed => self.genius_key_handler.handle_input(&mut self.app, ctx, &mut self.input_text),
-        };
-        
-        // Set up the central panel with accent-colored visuals
-        let mut frame = egui::Frame::default();
-        frame.stroke = egui::Stroke::new(1.0, ACCENT_COLOR.linear_multiply(0.5));
-        
-        egui::CentralPanel::default().frame(frame).show(ctx, |ui| {
-            // Set a max width for all content to ensure it stays within bounds
-            let available_width = ui.available_width();
+        // Set up the main layout with a central panel
+        egui::CentralPanel::default().show(ctx, |ui| {
+            // Calculate available height and allocate space for components
+            let available_height = ui.available_height();
             
-            // Use a vertical layout with constrained width
+            // Reserve space for fixed-height components
+            let activity_log_height = 30.0; // Approximate height for activity log
+            let help_text_height = 30.0;    // Approximate height for help text
+            let input_field_height = 35.0;  // Slightly increased to provide bottom padding
+            let bottom_padding = 5.0;       // Extra padding at the bottom of the screen
+            
+            // Calculate remaining height for the task list
+            let task_list_height = available_height - activity_log_height - help_text_height - input_field_height - bottom_padding;
+            
             ui.vertical(|ui| {
-                // Ensure all UI elements respect the available width
-                ui.set_max_width(available_width);
-                
-                // Create a split layout for the main content and the genius feed
-                let panel = egui::TopBottomPanel::top("main_content")
-                    .frame(egui::Frame::none());
-                
-                panel.show_inside(ui, |ui| {
-                    // Tasks area (takes most of the space)
-                    self.render_tasks(ui);
+                // Render the task list with a fixed height (only in PKM mode)
+                if matches!(self.app.app_mode, AppMode::Pkm) {
+                    // Set a minimum height to ensure the task list is always visible
+                    let task_list_height = task_list_height.max(200.0);
                     
-                    ui.separator();
-                    
-                    // Activity log
-                    self.render_activity_log(ui);
-                    
-                    // Help text
-                    self.render_help(ui);
-                    
-                    // Input field at the bottom
-                    self.render_input(ui);
-                });
-                
-                // Genius feed displayed in the remaining space
-                if self.app.app_mode == AppMode::Feed {
-                    // In Feed mode, give the genius feed more space
-                    ui.allocate_space(egui::Vec2::new(0.0, 10.0)); // Small spacing
-                    let available_height = ui.available_height();
+                    // Create a container with fixed height for the task list
                     egui::Frame::none()
+                        .fill(ui.visuals().extreme_bg_color)
+                        .inner_margin(0.0)
+                        .outer_margin(0.0)
                         .show(ui, |ui| {
-                            ui.set_min_height(available_height.max(200.0));
-                            self.render_genius_feed(ui);
+                            ui.set_min_height(task_list_height);
+                            ui.set_max_height(task_list_height);
+                            self.render_tasks(ui);
                         });
-                } else {
-                    // In PKM mode, show a smaller version
-                    ui.allocate_space(egui::Vec2::new(0.0, 10.0)); // Small spacing
-                    self.render_genius_feed(ui);
                 }
+                
+                // Render the activity log (only in PKM mode)
+                if matches!(self.app.app_mode, AppMode::Pkm) {
+                    self.render_activity_log(ui);
+                }
+                
+                // Render the help text
+                self.render_help(ui);
+                
+                // Render the input field
+                self.render_input(ui);
             });
         });
         
-        // We track input_handled but don't call request_repaint as it causes crashes
-        // Using the variable prevents unused variable warnings
-        let _ = input_handled;
+        // Request focus to the input field if needed
+        if self.app.display_container_state.request_focus_next_frame {
+            ctx.memory_mut(|mem| mem.request_focus(egui::Id::new("main_input")));
+            self.app.display_container_state.request_focus_next_frame = false;
+        }
     }
 }

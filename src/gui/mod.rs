@@ -6,6 +6,6 @@
 
 mod keyhandler;
 mod rendering;
-pub mod genius_feed;
+// Removed genius_feed module as it's been moved to archive
 
 pub use rendering::run_app;

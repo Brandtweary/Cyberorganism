@@ -14,7 +14,7 @@
 //!    - Add any additional data structures needed for the API
 //!
 //! 2. **Request Construction**:
-//!    - In the `query_sync` method, update the request body JSON (around line 125)
+//!    - In the `query` method, update the request body JSON
 //!    - Ensure all required fields are included in the request
 //!    - Update headers if needed (currently using Bearer token authentication)
 //!
@@ -72,10 +72,10 @@ pub enum GeniusApiError {
 impl std::fmt::Display for GeniusApiError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Self::NetworkError(msg) => write!(f, "Network error: {}", msg),
-            Self::ParseError(msg) => write!(f, "Parse error: {}", msg),
-            Self::ApiError(msg) => write!(f, "API error: {}", msg),
-            Self::Other(msg) => write!(f, "Other error: {}", msg),
+            Self::NetworkError(msg) => write!(f, "Network error: {msg}"),
+            Self::ParseError(msg) => write!(f, "Parse error: {msg}"),
+            Self::ApiError(msg) => write!(f, "API error: {msg}"),
+            Self::Other(msg) => write!(f, "Other error: {msg}"),
         }
     }
 }
@@ -89,17 +89,25 @@ pub struct GeniusApiClient {
     timeout: Duration,
     organization_id: String,
     session_id: String,
+    http_client: reqwest::Client,
 }
 
 impl GeniusApiClient {
     /// Create a new API client with default settings
     pub fn new() -> Self {
+        // Create a reqwest client with default timeout
+        let http_client = reqwest::Client::builder()
+            .timeout(Duration::from_secs(10))
+            .build()
+            .unwrap_or_default();
+            
         Self {
             base_url: "https://app.productgenius.io".to_string(),
             api_key: None,
             timeout: Duration::from_secs(10),
             organization_id: String::new(),
             session_id: Uuid::new_v4().to_string(),
+            http_client,
         }
     }
 
@@ -110,12 +118,19 @@ impl GeniusApiClient {
         timeout: Duration,
         organization_id: String,
     ) -> Self {
+        // Create a reqwest client with the specified timeout
+        let http_client = reqwest::Client::builder()
+            .timeout(timeout)
+            .build()
+            .unwrap_or_default();
+            
         Self {
             base_url,
             api_key,
             timeout,
             organization_id,
             session_id: Uuid::new_v4().to_string(),
+            http_client,
         }
     }
 
@@ -137,8 +152,18 @@ impl GeniusApiClient {
     }
 
     /// Get the timeout duration
-    pub fn timeout(&self) -> Duration {
+    pub const fn timeout(&self) -> Duration {
         self.timeout
+    }
+
+    /// Get the API key if available
+    pub fn api_key(&self) -> Option<String> {
+        self.api_key.clone()
+    }
+    
+    /// Get the organization ID
+    pub fn organization_id(&self) -> String {
+        self.organization_id.clone()
     }
 
     /// Get the server URL for API requests
@@ -150,45 +175,26 @@ impl GeniusApiClient {
         )
     }
 
-    /// Query the API synchronously with a specific page number
-    pub fn query_sync_with_page(&self, input: &str, page: usize) -> Result<GeniusResponse, GeniusApiError> {
+    /// Query the API asynchronously with a specific page number
+    pub async fn query_with_page(&self, input: &str, page: usize) -> Result<GeniusResponse, GeniusApiError> {
         // When mock-api feature is explicitly enabled, always use mock data
         #[cfg(feature = "mock-api")]
         {
-            println!("[DEBUG] Using mock data due to mock-api feature");
-            return Ok(self.mock_query(input));
+            return Ok(self.mock_query(input, page));
         }
 
         // In normal mode, try to use real API but fall back to mock if no API key or organization ID
         #[cfg(not(feature = "mock-api"))]
         {
             // If no API key is provided or it's empty, or organization ID is empty, fall back to mock data
-            if self.api_key.is_none() || 
-               self.api_key.as_ref().map_or(true, |k| k.trim().is_empty()) ||
+            if self.api_key.as_ref().is_none_or(|k| k.trim().is_empty()) ||
                self.organization_id.is_empty() {
-                println!("[DEBUG] Using mock data due to missing API key or organization ID");
-                println!("[DEBUG] API key present: {}", self.api_key.is_some());
-                println!("[DEBUG] Organization ID: '{}'", self.organization_id);
-                return Ok(self.mock_query(input));
+                return Ok(self.mock_query(input, page));
             }
             
             // API key is available, proceed with real API request
             let api_key = self.api_key.as_ref().unwrap();
             let server_url = self.get_server_url();
-            
-            println!("[DEBUG] Sending API request to: {}", server_url);
-            println!("[DEBUG] Query text: '{}' (page {})", input, page);
-            
-            // Create the request client with timeout
-            let client = match reqwest::blocking::Client::builder()
-                .timeout(self.timeout)
-                .build() {
-                    Ok(client) => client,
-                    Err(e) => {
-                        println!("[DEBUG] Failed to build HTTP client: {}", e);
-                        return Err(GeniusApiError::NetworkError(e.to_string()));
-                    }
-                };
             
             // Prepare the request body based on the genius-hackathon-skeleton implementation
             let request_body = serde_json::json!({
@@ -197,276 +203,124 @@ impl GeniusApiClient {
                 "batch_count": 10
             });
             
-            // Comment out detailed request body logging
-            // println!("[DEBUG] Request body: {}", serde_json::to_string_pretty(&request_body).unwrap_or_default());
-            
-            // Debug the full request details - commented out for reduced output
-            let auth_header = format!("Bearer {}", api_key);
-            // println!("[DEBUG] Full request details:");
-            // println!("[DEBUG] URL: {}", server_url);
-            // println!("[DEBUG] Authorization header: {}", auth_header);
-            // println!("[DEBUG] Content-Type: application/json");
-            
-            // Execute the request
-            let response = match client
-                .post(&server_url)
-                .header("Authorization", auth_header)
+            // Make the async request
+            let response = match self.http_client.post(&server_url)
                 .header("Content-Type", "application/json")
-                .json(&request_body)
-                .send() {
-                    Ok(resp) => {
-                        println!("[DEBUG] Received response with status: {}", resp.status());
-                        
-                        // Comment out detailed response headers logging
-                        // println!("[DEBUG] Response headers:");
-                        // for (name, value) in resp.headers() {
-                        //     println!("[DEBUG]   {}: {}", name, value.to_str().unwrap_or("(invalid header value)"));
-                        // }
-                        
-                        resp
-                    },
-                    Err(e) => {
-                        println!("[DEBUG] Request failed: {}", e);
-                        return Err(GeniusApiError::NetworkError(e.to_string()));
-                    }
-                };
-            
-            // Check the response status
-            if !response.status().is_success() {
-                let error_msg = format!("API returned error status: {}", response.status());
-                println!("[DEBUG] {}", error_msg);
-                
-                // Try to get the response body for more error details
-                match response.text() {
-                    Ok(error_body) => {
-                        // Comment out detailed error body logging
-                        // println!("[DEBUG] Error response body: {}", error_body);
-                        return Err(GeniusApiError::ApiError(format!("{}: {}", error_msg, error_body)));
-                    },
-                    Err(_) => {
-                        return Err(GeniusApiError::ApiError(error_msg));
-                    }
-                }
-            }
-            
-            // Parse the response text first
-            let text = match response.text() {
-                Ok(text) => {
-                    // Comment out full response text logging
-                    // println!("[DEBUG] Response text: {}", text);
-                    text
-                },
-                Err(e) => {
-                    println!("[DEBUG] Failed to read response text: {}", e);
-                    return Err(GeniusApiError::NetworkError(e.to_string()));
-                }
-            };
-            
-            // Parse the JSON response
-            let payload: serde_json::Value = match serde_json::from_str(&text) {
-                Ok(payload) => payload,
-                Err(e) => {
-                    println!("[DEBUG] Failed to parse JSON: {}", e);
-                    return Err(GeniusApiError::ParseError(e.to_string()));
-                }
-            };
-            
-            // Extract the cards from the response
-            let cards = match payload.get("cards") {
-                Some(cards) => cards,
-                None => {
-                    println!("[DEBUG] No 'cards' field in response");
-                    return Err(GeniusApiError::ParseError("No cards in response".to_string()));
-                }
-            };
-            
-            // Convert the cards to GeniusItems
-            let items = match self.convert_cards_to_items(cards) {
-                Ok(items) => {
-                    println!("[DEBUG] Successfully converted {} cards to GeniusItems", items.len());
-                    items
-                },
-                Err(e) => {
-                    println!("[DEBUG] Failed to convert cards to GeniusItems: {}", e);
-                    return Err(e);
-                }
-            };
-            
-            // Create and return the response
-            Ok(GeniusResponse {
-                items,
-                status: "success".to_string(),
-            })
-        }
-    }
-
-    /// Query the API synchronously (page 1)
-    /// 
-    /// This is a wrapper around query_sync_with_page for backward compatibility
-    pub fn query_sync(&self, input: &str) -> Result<GeniusResponse, GeniusApiError> {
-        self.query_sync_with_page(input, 1)
-    }
-
-    /// Convert cards from the API response to GeniusItems
-    fn convert_cards_to_items(&self, cards: &serde_json::Value) -> Result<Vec<GeniusItem>, GeniusApiError> {
-        let mut items = Vec::new();
-        
-        if let Some(cards_array) = cards.as_array() {
-            for (i, card) in cards_array.iter().enumerate() {
-                // Extract the text from product.body or use a default
-                let description = card.get("product")
-                    .and_then(|product| product.get("body"))
-                    .and_then(|v| v.as_str())
-                    .unwrap_or(&format!("Item {}", i+1))
-                    .to_string();
-                
-                // Extract the ID or generate one
-                let id = card.get("id")
-                    .and_then(|v| v.as_str())
-                    .unwrap_or(&format!("item-{}", i+1))
-                    .to_string();
-                
-                // Create a GeniusItem
-                let item = GeniusItem {
-                    id,
-                    description,
-                    metadata: {
-                        let map = card.clone();
-                        
-                        map
-                    },
-                };
-                
-                items.push(item);
-            }
-        }
-        
-        if items.is_empty() {
-            return Err(GeniusApiError::ParseError("Failed to parse cards from response".to_string()));
-        }
-        
-        Ok(items)
-    }
-    
-    /// Create a mock response for testing and development
-    pub fn mock_query(&self, query: &str) -> GeniusResponse {
-        // Create dummy items with simple numeric IDs and static+dynamic descriptions
-        let mut items = Vec::new();
-        
-        // Static descriptions for each item
-        let static_descriptions = [
-            "Implement authentication system",
-            "Create database schema",
-            "Design user interface",
-            "Write documentation",
-            "Set up CI/CD pipeline",
-            "Optimize performance",
-            "Fix security vulnerabilities",
-            "Add analytics tracking",
-        ];
-        
-        for i in 1..=8 {
-            let item = GeniusItem {
-                // Simple numeric IDs for easy debugging
-                id: i.to_string(),
-                // Combine static description with dynamic query information
-                description: format!("Item {}: {} (query: '{}')", i, static_descriptions[i-1], query),
-                metadata: serde_json::json!({}),
-            };
-            items.push(item);
-        }
-        
-        // Create a mock response
-        GeniusResponse {
-            items,
-            status: "success".to_string(),
-        }
-    }
-
-    /// Query the API asynchronously
-    pub async fn query(&self, input: &str) -> Result<GeniusResponse, GeniusApiError> {
-        // When mock-api feature is explicitly enabled, always use mock data
-        #[cfg(feature = "mock-api")]
-        {
-            return Ok(self.mock_query(input));
-        }
-
-        // In normal mode, try to use real API but fall back to mock if no API key or organization ID
-        #[cfg(not(feature = "mock-api"))]
-        {
-            // If no API key is provided or it's empty, or organization ID is empty, fall back to mock data
-            if self.api_key.is_none() || 
-               self.api_key.as_ref().map_or(true, |k| k.trim().is_empty()) ||
-               self.organization_id.is_empty() {
-                return Ok(self.mock_query(input));
-            }
-            
-            // API key is available, proceed with real API request
-            let api_key = self.api_key.as_ref().unwrap();
-            
-            // Create the request client with timeout
-            let client = match reqwest::Client::builder()
-                .timeout(self.timeout)
-                .build() {
-                    Ok(client) => client,
-                    Err(e) => return Err(GeniusApiError::NetworkError(e.to_string())),
-                };
-            
-            // Prepare the request body based on the genius-hackathon-skeleton implementation
-            let request_body = serde_json::json!({
-                "search_prompt": input,
-                "page": 1,
-                "batch_count": 10
-            });
-            
-            // Execute the request
-            let response = match client
-                .post(&self.get_server_url())
-                .header("Authorization", format!("Bearer {}", api_key))
-                .header("Content-Type", "application/json")
+                .header("Authorization", format!("Bearer {api_key}"))
                 .json(&request_body)
                 .send()
                 .await {
-                    Ok(resp) => resp,
+                    Ok(response) => response,
                     Err(e) => return Err(GeniusApiError::NetworkError(e.to_string())),
                 };
             
-            // Check the response status
+            // Check if the request was successful
             if !response.status().is_success() {
-                return Err(GeniusApiError::ApiError(
-                    format!("API returned error status: {}", response.status())
-                ));
+                let status = response.status();
+                let error_text = response.text().await.unwrap_or_else(|_| "Unknown error".to_string());
+                return Err(GeniusApiError::ApiError(format!("API returned error: {status} - {error_text}")));
             }
             
-            // Parse the response text first
-            let text = match response.text().await {
+            // Parse the response
+            let response_text = match response.text().await {
                 Ok(text) => text,
                 Err(e) => return Err(GeniusApiError::NetworkError(e.to_string())),
             };
             
-            // Parse the JSON response
-            let payload: serde_json::Value = match serde_json::from_str(&text) {
-                Ok(payload) => payload,
+            // Try to parse the response as JSON
+            let response_json: serde_json::Value = match serde_json::from_str(&response_text) {
+                Ok(json) => json,
                 Err(e) => return Err(GeniusApiError::ParseError(e.to_string())),
             };
             
             // Extract the cards from the response
-            let cards = match payload.get("cards") {
-                Some(cards) => cards,
-                None => return Err(GeniusApiError::ParseError("No cards in response".to_string())),
-            };
+            if let Some(cards) = response_json.get("cards") {
+                match self.convert_cards_to_items(cards) {
+                    Ok(items) => {
+                        return Ok(GeniusResponse {
+                            items,
+                            status: "success".to_string(),
+                        });
+                    },
+                    Err(e) => return Err(e),
+                }
+            }
             
-            // Convert the cards to GeniusItems
-            let items = match self.convert_cards_to_items(cards) {
-                Ok(items) => items,
-                Err(e) => return Err(e),
-            };
+            Err(GeniusApiError::ParseError("Response does not contain 'cards' field".to_string()))
+        }
+    }
+
+    /// Query the API asynchronously (page 1)
+    pub async fn query(&self, input: &str) -> Result<GeniusResponse, GeniusApiError> {
+        self.query_with_page(input, 1).await
+    }
+
+    /// Convert cards from the API response to `GeniusItems`
+    #[allow(clippy::unused_self)]
+    fn convert_cards_to_items(&self, cards: &serde_json::Value) -> Result<Vec<GeniusItem>, GeniusApiError> {
+        if let Some(cards_array) = cards.as_array() {
+            let mut items = Vec::new();
             
-            // Create and return the response
-            Ok(GeniusResponse {
-                items,
-                status: "success".to_string(),
-            })
+            for card in cards_array {
+                // Extract the card ID
+                let id = match card.get("id") {
+                    Some(id) => id.as_str().unwrap_or("unknown").to_string(),
+                    None => Uuid::new_v4().to_string(), // Generate a random ID if none is provided
+                };
+                
+                // Extract the card content
+                let description = match card.get("content") {
+                    Some(content) => content.as_str().unwrap_or("").to_string(),
+                    None => continue, // Skip cards without content
+                };
+                
+                // Skip empty descriptions
+                if description.trim().is_empty() {
+                    continue;
+                }
+                
+                // Create a GeniusItem from the card
+                items.push(GeniusItem {
+                    id,
+                    description,
+                    metadata: card.clone(),
+                });
+            }
+            
+            Ok(items)
+        } else {
+            Err(GeniusApiError::ParseError("Cards is not an array".to_string()))
+        }
+    }
+
+    /// Create a mock response for testing and development
+    fn mock_query(&self, query: &str, page: usize) -> GeniusResponse {
+        let mut items = Vec::new();
+        
+        // Calculate the starting index based on the page number
+        let start_idx = (page - 1) * 10 + 1;
+        let end_idx = start_idx + 9;
+        
+        // Generate 10 mock items with the query text
+        for i in start_idx..=end_idx {
+            let id = format!("mock-{}", i);
+            let description = format!("Mock result {} for query: '{}' (page {})", i, query, page);
+            
+            items.push(GeniusItem {
+                id,
+                description,
+                metadata: serde_json::json!({
+                    "relevance": 0.9 - ((i % 10) as f64 * 0.05),
+                    "source": "mock-data",
+                    "query": query,
+                    "page": page,
+                }),
+            });
+        }
+        
+        GeniusResponse {
+            items,
+            status: "success".to_string(),
         }
     }
 }
@@ -474,12 +328,12 @@ impl GeniusApiClient {
 /// Module containing mock implementations for testing
 pub mod mock {
     use super::*;
-
+    
     /// Creates a mock API client that returns predefined responses
     pub fn create_mock_client() -> GeniusApiClient {
         GeniusApiClient::new()
     }
-
+    
     /// Creates a mock response with the given items
     pub fn create_mock_response(items: Vec<GeniusItem>) -> GeniusResponse {
         GeniusResponse {
@@ -492,7 +346,7 @@ pub mod mock {
 /// Utility functions for working with API responses
 pub mod utils {
     use super::*;
-
+    
     /// Extract descriptions from a list of items
     pub fn extract_descriptions(response: &GeniusResponse) -> Vec<String> {
         response.items.iter()
