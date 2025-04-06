@@ -1,6 +1,6 @@
-# Cyberorganism: Chat Interface for Knowledge Graphs
+# Cyberorganism
 
-[![CI](https://github.com/Brandtweary/aichat-cyberorganism/actions/workflows/ci.yaml/badge.svg)](https://github.com/Brandtweary/aichat-cyberorganism/actions/workflows/ci.yaml)
+> This project is a fork of [AIChat](https://github.com/sigoden/aichat), an all-in-one LLM CLI tool. Please visit the original repository at https://github.com/sigoden/aichat for the latest updates to the base project.
 
 Cyberorganism is a specialized chat interface for knowledge graphs, built as a fork of [AIChat](https://github.com/sigoden/aichat). It enhances AIChat's capabilities with features specifically designed for interacting with and navigating knowledge graphs.
 
