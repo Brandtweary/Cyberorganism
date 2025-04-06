@@ -1,24 +1,25 @@
-# AIChat: All-in-one LLM CLI Tool
+# Cyberorganism: Chat Interface for Knowledge Graphs
 
-[![CI](https://github.com/sigoden/aichat/actions/workflows/ci.yaml/badge.svg)](https://github.com/sigoden/aichat/actions/workflows/ci.yaml)
-[![Crates](https://img.shields.io/crates/v/aichat.svg)](https://crates.io/crates/aichat)
-[![Discord](https://img.shields.io/discord/1226737085453701222?label=Discord)](https://discord.gg/mr3ZZUB9hG)
+[![CI](https://github.com/Brandtweary/aichat-cyberorganism/actions/workflows/ci.yaml/badge.svg)](https://github.com/Brandtweary/aichat-cyberorganism/actions/workflows/ci.yaml)
 
-AIChat is an all-in-one LLM CLI tool featuring Shell Assistant, CMD & REPL Mode, RAG, AI Tools & Agents, and More. 
+Cyberorganism is a specialized chat interface for knowledge graphs, built as a fork of [AIChat](https://github.com/sigoden/aichat). It enhances AIChat's capabilities with features specifically designed for interacting with and navigating knowledge graphs.
 
 ## Install
 
-### Package Managers
+### From Source
 
-- **Rust Developers:** `cargo install aichat`
-- **Homebrew/Linuxbrew Users:** `brew install aichat`
-- **Pacman Users**: `pacman -S aichat`
-- **Windows Scoop Users:** `scoop install aichat`
-- **Android Termux Users:** `pkg install aichat`
+```bash
+# Clone the repository
+git clone https://github.com/Brandtweary/aichat-cyberorganism.git
+cd aichat-cyberorganism
+
+# Install with Cargo
+cargo install --path .
+```
 
 ### Pre-built Binaries
 
-Download pre-built binaries for macOS, Linux, and Windows from [GitHub Releases](https://github.com/sigoden/aichat/releases), extract them, and add the `aichat` binary to your `$PATH`.
+Download pre-built binaries from [GitHub Releases](https://github.com/Brandtweary/aichat-cyberorganism/releases), extract them, and add the `cyberorganism` binary to your `$PATH`.
 
 ## Features
 
@@ -28,7 +29,7 @@ Integrate seamlessly with over 20 leading LLM providers through a unified interf
 
 ### CMD Mode
 
-Explore powerful command-line functionalities with AIChat's CMD mode.
+Explore powerful command-line functionalities with Cyberorganism's CMD mode.
 
 ![aichat-cmd](https://github.com/user-attachments/assets/6c58c549-1564-43cf-b772-e1c9fe91d19c)
 
@@ -40,7 +41,7 @@ Experience an interactive Chat-REPL with features like tab autocompletion, multi
 
 ### Shell Assistant
 
-Elevate your command-line efficiency. Describe your tasks in natural language, and let AIChat transform them into precise shell commands. AIChat intelligently adjusts to your OS and shell environment.
+Elevate your command-line efficiency. Describe your tasks in natural language, and let Cyberorganism transform them into precise shell commands. Cyberorganism intelligently adjusts to your OS and shell environment.
 
 ![aichat-execute](https://github.com/user-attachments/assets/0c77e901-0da2-4151-aefc-a2af96bbb004)
 
@@ -50,14 +51,14 @@ Accept diverse input forms such as stdin, local files and directories, and remot
 
 | Input             | CMD                                  | REPL                             |
 | ----------------- | ------------------------------------ | -------------------------------- |
-| CMD               | `aichat hello`                       |                                  |
-| STDIN             | `cat data.txt \| aichat`             |                                  |
+| CMD               | `cyberorganism hello`                       |                                  |
+| STDIN             | `cat data.txt \| cyberorganism`             |                                  |
 | Last Reply        |                                      | `.file %%`                       |
-| Local files       | `aichat -f image.png -f data.txt`    | `.file image.png data.txt`       |
-| Local directories | `aichat -f dir/`                     | `.file dir/`                     |
-| Remote URLs       | `aichat -f https://example.com`      | `.file https://example.com`      |
-| External commands | ```aichat -f '`git diff`'```         | ```.file `git diff` ```          |
-| Combine Inputs    | `aichat -f dir/ -f data.txt explain` | `.file dir/ data.txt -- explain` |
+| Local files       | `cyberorganism -f image.png -f data.txt`    | `.file image.png data.txt`       |
+| Local directories | `cyberorganism -f dir/`                     | `.file dir/`                     |
+| Remote URLs       | `cyberorganism -f https://example.com`      | `.file https://example.com`      |
+| External commands | ```cyberorganism -f '`git diff`'```         | ```.file `git diff` ```          |
+| Combine Inputs    | `cyberorganism -f dir/ -f data.txt explain` | `.file dir/ data.txt -- explain` |
 
 ### Role
 
@@ -107,10 +108,10 @@ AI Agent = Instructions (Prompt) + Tools (Function Callings) + Documents (RAG).
 
 ### Local Server Capabilities
 
-AIChat includes a lightweight built-in HTTP server for easy deployment.
+Cyberorganism includes a lightweight built-in HTTP server for easy deployment.
 
 ```
-$ aichat --serve
+$ cyberorganism --serve
 Chat Completions API: http://127.0.0.1:8000/v1/chat/completions
 Embeddings API:       http://127.0.0.1:8000/v1/embeddings
 Rerank API:           http://127.0.0.1:8000/v1/rerank
@@ -146,7 +147,7 @@ A web platform to compare different LLMs side-by-side.
 
 ## Custom Themes
 
-AIChat supports custom dark and light themes, which highlight response text and code blocks.
+Cyberorganism supports custom dark and light themes, which highlight response text and code blocks.
 
 ![aichat-themes](https://github.com/sigoden/aichat/assets/4012553/29fa8b79-031e-405d-9caa-70d24fa0acf8)
 
@@ -167,6 +168,6 @@ AIChat supports custom dark and light themes, which highlight response text and 
 
 Copyright (c) 2023-2025 aichat-developers.
 
-AIChat is made available under the terms of either the MIT License or the Apache License 2.0, at your option.
+Cyberorganism is made available under the terms of either the MIT License or the Apache License 2.0, at your option.
 
 See the LICENSE-APACHE and LICENSE-MIT files for license details.

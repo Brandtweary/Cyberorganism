@@ -1,14 +1,14 @@
 [package]
-name = "aichat"
-version = "0.29.0"
+name = "cyberorganism"
+version = "0.1.0"
 edition = "2021"
-authors = ["sigoden <sigoden@gmail.com>"]
-description = "All-in-one LLM CLI Tool"
+authors = ["sigoden <sigoden@gmail.com>", "Brandt Weary <brandtweary@gmail.com>"]
+description = "Chat interface for knowledge graphs, based on AIChat"
 license = "MIT OR Apache-2.0"
-homepage = "https://github.com/sigoden/aichat"
-repository = "https://github.com/sigoden/aichat"
+homepage = "https://github.com/Brandtweary/aichat-cyberorganism"
+repository = "https://github.com/Brandtweary/aichat-cyberorganism"
 categories = ["command-line-utilities"]
-keywords = ["chatgpt", "llm", "cli", "ai", "repl"]
+keywords = ["chatgpt", "llm", "cli", "ai", "knowledge-graph"]
 
 [dependencies]
 anyhow = "1.0.69"
