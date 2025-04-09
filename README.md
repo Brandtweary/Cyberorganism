@@ -10,8 +10,8 @@ Cyberorganism is a specialized chat interface for knowledge graphs, built as a f
 
 ```bash
 # Clone the repository
-git clone https://github.com/Brandtweary/aichat-cyberorganism.git
-cd aichat-cyberorganism
+git clone https://github.com/Brandtweary/cyberorganism.git
+cd cyberorganism
 
 # Install with Cargo
 cargo install --path .
@@ -19,7 +19,7 @@ cargo install --path .
 
 ### Pre-built Binaries
 
-Download pre-built binaries from [GitHub Releases](https://github.com/Brandtweary/aichat-cyberorganism/releases), extract them, and add the `cyberorganism` binary to your `$PATH`.
+Download pre-built binaries from [GitHub Releases](https://github.com/Brandtweary/cyberorganism/releases), extract them, and add the `cyberorganism` binary to your `$PATH`.
 
 ## Features
 
