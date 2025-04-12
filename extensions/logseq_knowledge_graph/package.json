@@ -1,0 +1,15 @@
+{
+  "name": "logseq-knowledge-graph",
+  "version": "0.1.0",
+  "description": "Integrates Logseq with a knowledge graph backend",
+  "main": "index.html",
+  "author": "",
+  "license": "MIT",
+  "logseq": {
+    "id": "logseq-knowledge-graph",
+    "icon": "icon.png"
+  },
+  "dependencies": {
+    "@logseq/libs": "^0.0.14"
+  }
+}
