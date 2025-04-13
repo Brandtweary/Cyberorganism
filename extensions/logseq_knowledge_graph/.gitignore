@@ -1,5 +1,6 @@
 # Knowledge graph backend
 data/
+logseq_knowledge_graph_server.pid
 
 # Rust build artifacts
 /backend/target/
