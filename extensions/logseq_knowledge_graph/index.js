@@ -168,12 +168,8 @@ async function processBlockData(block) {
     
     // Filter out empty blocks - they don't belong in a knowledge graph
     if (!blockEntity.content || blockEntity.content.trim() === '') {
-      const pageName = blockEntity.page ? 
-        (await logseq.Editor.getPage(blockEntity.page.id))?.name || 'unknown' : 
-        'unknown';
-      
-      validationIssues.addBlockIssue(block.uuid, pageName, ['Empty block content - skipped']);
-      return null; // Skip this block entirely
+      // Just skip this block entirely without adding to validation issues
+      return null;
     }
     
     // Get the page that contains this block
@@ -376,19 +372,62 @@ const validationIssues = {
   // Add a block validation issue
   addBlockIssue(blockId, pageName, issues) {
     if (!this.blocks[pageName]) {
-      this.blocks[pageName] = [];
+      this.blocks[pageName] = {};
     }
-    this.blocks[pageName].push({ blockId, issues });
-    this.totalBlockIssues++;
+    
+    // Parse issues into specific types
+    if (typeof issues === 'string') {
+      issues = [issues];
+    }
+    
+    for (const issue of issues) {
+      const issueType = this.categorizeIssue(issue);
+      if (!this.blocks[pageName][issueType]) {
+        this.blocks[pageName][issueType] = 0;
+      }
+      this.blocks[pageName][issueType]++;
+      this.totalBlockIssues++;
+    }
   },
   
   // Add a page validation issue
   addPageIssue(pageName, issues) {
     if (!this.pages[pageName]) {
-      this.pages[pageName] = [];
+      this.pages[pageName] = {};
     }
-    this.pages[pageName].push({ issues });
-    this.totalPageIssues++;
+    
+    // Parse issues into specific types
+    if (typeof issues === 'string') {
+      issues = [issues];
+    }
+    
+    for (const issue of issues) {
+      const issueType = this.categorizeIssue(issue);
+      if (!this.pages[pageName][issueType]) {
+        this.pages[pageName][issueType] = 0;
+      }
+      this.pages[pageName][issueType]++;
+      this.totalPageIssues++;
+    }
+  },
+  
+  // Categorize an issue message into a specific type
+  categorizeIssue(issue) {
+    if (issue.includes('empty') || issue.includes('Empty')) {
+      return 'empty_content';
+    } else if (issue.includes('ID') || issue.includes('id')) {
+      return 'invalid_id';
+    } else if (issue.includes('timestamp')) {
+      return 'invalid_timestamp';
+    } else if (issue.includes('parent')) {
+      return 'invalid_parent';
+    } else if (issue.includes('child') || issue.includes('Children')) {
+      return 'invalid_children';
+    } else if (issue.includes('reference')) {
+      return 'invalid_reference';
+    } else {
+      return 'other';
+    }
   },
   
   // Get a summary of all validation issues
@@ -400,17 +439,54 @@ const validationIssues = {
       pageIssues: {}
     };
     
-    // Summarize block issues by page
+    // Summarize block issues by page with issue types
     for (const pageName in this.blocks) {
-      summary.blockIssuesByPage[pageName] = this.blocks[pageName].length;
+      const issueTypes = this.blocks[pageName];
+      const totalPageIssues = Object.values(issueTypes).reduce((sum, count) => sum + count, 0);
+      
+      // Format as "pageName: count (type1: count1, type2: count2, ...)"
+      const typeBreakdown = Object.entries(issueTypes)
+        .map(([type, count]) => `${this.formatIssueType(type)}: ${count}`)
+        .join(', ');
+      
+      summary.blockIssuesByPage[pageName] = {
+        total: totalPageIssues,
+        breakdown: typeBreakdown,
+        types: issueTypes
+      };
     }
     
-    // Summarize page issues
+    // Summarize page issues with types
     for (const pageName in this.pages) {
-      summary.pageIssues[pageName] = this.pages[pageName].length;
+      const issueTypes = this.pages[pageName];
+      const totalPageIssues = Object.values(issueTypes).reduce((sum, count) => sum + count, 0);
+      
+      const typeBreakdown = Object.entries(issueTypes)
+        .map(([type, count]) => `${this.formatIssueType(type)}: ${count}`)
+        .join(', ');
+      
+      summary.pageIssues[pageName] = {
+        total: totalPageIssues,
+        breakdown: typeBreakdown,
+        types: issueTypes
+      };
     }
     
     return summary;
+  },
+  
+  // Format issue type for display
+  formatIssueType(type) {
+    switch (type) {
+      case 'empty_content': return 'empty block content';
+      case 'invalid_id': return 'invalid ID';
+      case 'invalid_timestamp': return 'invalid timestamp';
+      case 'invalid_parent': return 'invalid parent';
+      case 'invalid_children': return 'invalid children';
+      case 'invalid_reference': return 'invalid reference';
+      case 'other': return 'other issues';
+      default: return type;
+    }
   },
   
   // Reset the tracker
@@ -427,6 +503,11 @@ async function handleDBChanges(changes) {
   try {
     console.log('DB changes detected:', changes.length);
     
+    // Batching containers
+    const batchSize = 20; // Smaller batch size for real-time changes
+    let blockBatch = [];
+    let pageBatch = [];
+    
     // Process each change
     for (const change of changes) {
       // Skip non-block and non-page changes
@@ -435,20 +516,19 @@ async function handleDBChanges(changes) {
       // Process block changes
       if (change.blocks && change.blocks.length > 0) {
         for (const block of change.blocks) {
-          console.log(`Processing changed block: ${block.uuid}`);
-          
           const blockData = await processBlockData(block);
           if (blockData) {
             const validation = validateBlockData(blockData);
             if (validation.valid) {
-              const graph = await logseq.App.getCurrentGraph();
-              await sendToBackend({
-                source: 'Logseq DB Change',
-                timestamp: new Date().toISOString(),
-                graphName: graph ? graph.name : 'unknown',
-                type_: 'block',
-                payload: JSON.stringify(blockData)
-              });
+              // Add to batch instead of sending immediately
+              blockBatch.push(blockData);
+              
+              // Send batch if it reaches the batch size
+              if (blockBatch.length >= batchSize) {
+                const graph = await logseq.App.getCurrentGraph();
+                await sendBatchToBackend('block', blockBatch, graph ? graph.name : 'unknown');
+                blockBatch = [];
+              }
             } else {
               console.error('Invalid block data:', validation.errors);
               validationIssues.addBlockIssue(blockData.id, blockData.page, validation.errors);
@@ -464,20 +544,19 @@ async function handleDBChanges(changes) {
       // Process page changes
       if (change.pages && change.pages.length > 0) {
         for (const page of change.pages) {
-          console.log(`Processing changed page: ${page.name}`);
-          
           const pageData = await processPageData(page);
           if (pageData) {
             const validation = validatePageData(pageData);
             if (validation.valid) {
-              const graph = await logseq.App.getCurrentGraph();
-              await sendToBackend({
-                source: 'Logseq DB Change',
-                timestamp: new Date().toISOString(),
-                graphName: graph ? graph.name : 'unknown',
-                type_: 'page',
-                payload: JSON.stringify(pageData)
-              });
+              // Add to batch instead of sending immediately
+              pageBatch.push(pageData);
+              
+              // Send batch if it reaches the batch size
+              if (pageBatch.length >= batchSize) {
+                const graph = await logseq.App.getCurrentGraph();
+                await sendBatchToBackend('page', pageBatch, graph ? graph.name : 'unknown');
+                pageBatch = [];
+              }
             } else {
               console.error('Invalid page data:', validation.errors);
               validationIssues.addPageIssue(pageData.name, validation.errors);
@@ -489,6 +568,18 @@ async function handleDBChanges(changes) {
           }
         }
       }
+    }
+    
+    // Send any remaining blocks in the batch
+    if (blockBatch.length > 0) {
+      const graph = await logseq.App.getCurrentGraph();
+      await sendBatchToBackend('block', blockBatch, graph ? graph.name : 'unknown');
+    }
+    
+    // Send any remaining pages in the batch
+    if (pageBatch.length > 0) {
+      const graph = await logseq.App.getCurrentGraph();
+      await sendBatchToBackend('page', pageBatch, graph ? graph.name : 'unknown');
     }
   } catch (error) {
     console.error('Error handling DB changes:', error);
@@ -518,6 +609,11 @@ async function syncFullDatabase() {
     let pagesProcessed = 0;
     let blocksProcessed = 0;
     
+    // Batching containers
+    const batchSize = 100; // Adjust based on your needs
+    let pageBatch = [];
+    let blockBatch = [];
+    
     // Process each page
     for (const page of allPages) {
       // Skip journal pages if they're too numerous
@@ -538,13 +634,14 @@ async function syncFullDatabase() {
       if (pageData) {
         const validation = validatePageData(pageData);
         if (validation.valid) {
-          await sendToBackend({
-            source: 'Full Sync',
-            timestamp: new Date().toISOString(),
-            graphName: graph.name,
-            type_: 'page',
-            payload: JSON.stringify(pageData)
-          });
+          // Add to page batch instead of sending immediately
+          pageBatch.push(pageData);
+          
+          // Send batch if it reaches the batch size
+          if (pageBatch.length >= batchSize) {
+            await sendBatchToBackend('page', pageBatch, graph.name);
+            pageBatch.length = 0; // Reset batch more efficiently
+          }
         } else {
           console.error('Invalid page data:', validation.errors);
           validationIssues.addPageIssue(pageData.name, validation.errors);
@@ -565,16 +662,27 @@ async function syncFullDatabase() {
       // Get all blocks for this page
       const pageBlocksTree = await logseq.Editor.getPageBlocksTree(page.name);
       
-      // Process blocks recursively
-      await processBlocksRecursively(pageBlocksTree, graph.name);
+      // Process blocks recursively and collect them in the batch
+      await processBlocksRecursively(pageBlocksTree, graph.name, blockBatch, batchSize);
       
       // Update blocks processed count
-      blocksProcessed += countBlocksInTree(pageBlocksTree);
+      const pageBlockCount = countBlocksInTree(pageBlocksTree);
+      blocksProcessed += pageBlockCount;
       
       // Show progress for blocks every 100 blocks
       if (blocksProcessed % 100 === 0) {
         logseq.App.showMsg(`Processed ${blocksProcessed} blocks so far...`, 'info');
       }
+    }
+    
+    // Send any remaining pages in the batch
+    if (pageBatch.length > 0) {
+      await sendBatchToBackend('page', pageBatch, graph.name);
+    }
+    
+    // Send any remaining blocks in the batch
+    if (blockBatch.length > 0) {
+      await sendBatchToBackend('block', blockBatch, graph.name);
     }
     
     // Display validation summary if there were issues
@@ -603,8 +711,8 @@ async function syncFullDatabase() {
   }
 }
 
-// Process blocks recursively
-async function processBlocksRecursively(blocks, graphName) {
+// Process blocks recursively with batching
+async function processBlocksRecursively(blocks, graphName, blockBatch, batchSize) {
   if (!blocks || !Array.isArray(blocks)) return;
   
   for (const block of blocks) {
@@ -613,23 +721,42 @@ async function processBlocksRecursively(blocks, graphName) {
     if (blockData) {
       const validation = validateBlockData(blockData);
       if (validation.valid) {
-        await sendToBackend({
-          source: 'Full Sync',
-          timestamp: new Date().toISOString(),
-          graphName: graphName,
-          type_: 'block',
-          payload: JSON.stringify(blockData)
-        });
+        // Add to block batch instead of sending immediately
+        blockBatch.push(blockData);
+        
+        // Send batch if it reaches the batch size
+        if (blockBatch.length >= batchSize) {
+          await sendBatchToBackend('block', blockBatch, graphName);
+          blockBatch.length = 0; // Reset batch more efficiently
+        }
       } else {
-        // Use the validation issues tracker instead of verbose logging
-        validationIssues.addBlockIssue(blockData.id, blockData.page || 'unknown', validation.errors);
+        validationIssues.addBlockIssue(blockData.id, blockData.page, validation.errors);
       }
     }
     
     // Process children recursively
     if (block.children && block.children.length > 0) {
-      await processBlocksRecursively(block.children, graphName);
+      await processBlocksRecursively(block.children, graphName, blockBatch, batchSize);
     }
+  }
+}
+
+// Send a batch of data to the backend
+async function sendBatchToBackend(type, batch, graphName) {
+  if (batch.length === 0) return;
+  
+  console.log(`Sending batch of ${batch.length} ${type}s to backend`);
+  
+  try {
+    await sendToBackend({
+      source: 'Full Sync',
+      timestamp: new Date().toISOString(),
+      graphName: graphName,
+      type_: `${type}_batch`,
+      payload: JSON.stringify(batch)
+    });
+  } catch (error) {
+    console.error(`Error sending ${type} batch:`, error);
   }
 }
 

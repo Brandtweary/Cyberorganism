@@ -185,8 +185,6 @@ async fn receive_data(
     // Process based on the type of data
     match data.type_.as_deref() {
         Some("block") => {
-            println!("Processing block data");
-            
             // Parse the payload as a LogseqBlockData
             match serde_json::from_str::<LogseqBlockData>(&data.payload) {
                 Ok(block_data) => {
@@ -197,9 +195,6 @@ async fn receive_data(
                             let mut datastore = state.datastore.lock().unwrap();
                             match datastore.create_or_update_node_from_logseq_block(&block_data) {
                                 Ok(node_id) => {
-                                    println!("Successfully processed block with ID: {}", block_data.id);
-                                    println!("Created/updated node with internal ID: {}", node_id);
-                                    
                                     Json(ApiResponse {
                                         success: true,
                                         message: format!("Block processed successfully. Node ID: {}", node_id),
@@ -278,9 +273,54 @@ async fn receive_data(
                 }
             }
         },
+        Some("block_batch") => {
+            // Parse the payload as an array of LogseqBlockData
+            match serde_json::from_str::<Vec<LogseqBlockData>>(&data.payload) {
+                Ok(blocks) => {
+                    println!("Processing batch of {} blocks", blocks.len());
+                    
+                    let mut datastore = state.datastore.lock().unwrap();
+                    let mut success_count = 0;
+                    let mut error_count = 0;
+                    let total_blocks = blocks.len();
+                    
+                    for block_data in &blocks {
+                        // Validate the block data
+                        match block_data.validate() {
+                            Ok(_) => {
+                                // Process the block data
+                                match datastore.create_or_update_node_from_logseq_block(block_data) {
+                                    Ok(_) => {
+                                        success_count += 1;
+                                    },
+                                    Err(_) => {
+                                        error_count += 1;
+                                    }
+                                }
+                            },
+                            Err(_) => {
+                                error_count += 1;
+                            }
+                        }
+                    }
+                    
+                    Json(ApiResponse {
+                        success: error_count == 0,
+                        message: format!("Processed {} blocks: {} successful, {} failed", 
+                                        total_blocks, success_count, error_count),
+                    })
+                },
+                Err(e) => {
+                    println!("Could not parse block batch: {}", e);
+                    
+                    Json(ApiResponse {
+                        success: false,
+                        message: format!("Could not parse block batch: {}", e),
+                    })
+                }
+            }
+        },
         Some("page") => {
-            println!("Processing page data");
-            
             // Parse the payload as a LogseqPageData
             match serde_json::from_str::<LogseqPageData>(&data.payload) {
                 Ok(page_data) => {
@@ -291,9 +331,6 @@ async fn receive_data(
                             let mut datastore = state.datastore.lock().unwrap();
                             match datastore.create_or_update_node_from_logseq_page(&page_data) {
                                 Ok(node_id) => {
-                                    println!("Successfully processed page: {}", page_data.name);
-                                    println!("Created/updated node with internal ID: {}", node_id);
-                                    
                                     Json(ApiResponse {
                                         success: true,
                                         message: format!("Page processed successfully. Node ID: {}", node_id),
@@ -328,18 +365,129 @@ async fn receive_data(
                 }
             }
         },
+        Some("page_batch") => {
+            // Parse the payload as an array of LogseqPageData
+            match serde_json::from_str::<Vec<LogseqPageData>>(&data.payload) {
+                Ok(pages) => {
+                    println!("Processing batch of {} pages", pages.len());
+                    
+                    let mut datastore = state.datastore.lock().unwrap();
+                    let mut success_count = 0;
+                    let mut error_count = 0;
+                    let total_pages = pages.len();
+                    
+                    for page_data in &pages {
+                        // Validate the page data
+                        match page_data.validate() {
+                            Ok(_) => {
+                                // Process the page data
+                                match datastore.create_or_update_node_from_logseq_page(page_data) {
+                                    Ok(_) => {
+                                        success_count += 1;
+                                    },
+                                    Err(_) => {
+                                        error_count += 1;
+                                    }
+                                }
+                            },
+                            Err(_) => {
+                                error_count += 1;
+                            }
+                        }
+                    }
+                    
+                    Json(ApiResponse {
+                        success: error_count == 0,
+                        message: format!("Processed {} pages: {} successful, {} failed", 
+                                        total_pages, success_count, error_count),
+                    })
+                },
+                Err(e) => {
+                    println!("Could not parse page batch: {}", e);
+                    
+                    Json(ApiResponse {
+                        success: false,
+                        message: format!("Could not parse page batch: {}", e),
+                    })
+                }
+            }
+        },
         Some("diagnostic") => {
             println!("\n=== DIAGNOSTIC INFO ===");
             
             // Parse the diagnostic payload
             match serde_json::from_str::<serde_json::Value>(&data.payload) {
                 Ok(value) => {
-                    if let Some(message) = value.get("message").and_then(|m| m.as_str()) {
-                        println!("Message: {}", message);
+                    let message_text = value.get("message").and_then(|m| m.as_str()).unwrap_or("");
+                    if !message_text.is_empty() {
+                        println!("Message: {}", message_text);
                     }
                     
                     if let Some(details) = value.get("details") {
-                        println!("Details: {}", serde_json::to_string_pretty(details).unwrap_or_else(|_| details.to_string()));
+                        // Format the validation issue details with breakdown by type
+                        if message_text.contains("Validation issues summary") {
+                            println!("Details: {{");
+                            
+                            // Process blockIssuesByPage with type breakdown
+                            if let Some(block_issues) = details.get("blockIssuesByPage") {
+                                if let Some(block_issues_obj) = block_issues.as_object() {
+                                    println!("  \"blockIssuesByPage\": {{");
+                                    
+                                    for (page_name, issues) in block_issues_obj {
+                                        if let Some(issue_obj) = issues.as_object() {
+                                            if let (Some(total), Some(breakdown)) = (issue_obj.get("total"), issue_obj.get("breakdown")) {
+                                                println!("    \"{}\": {} ({}),", page_name, total, breakdown.as_str().unwrap_or(""));
+                                            } else {
+                                                println!("    \"{}\": {},", page_name, issues);
+                                            }
+                                        } else {
+                                            println!("    \"{}\": {},", page_name, issues);
+                                        }
+                                    }
+                                    
+                                    println!("  }},");
+                                } else {
+                                    println!("  \"blockIssuesByPage\": {},", serde_json::to_string_pretty(block_issues).unwrap_or_else(|_| block_issues.to_string()));
+                                }
+                            }
+                            
+                            // Process pageIssues with type breakdown
+                            if let Some(page_issues) = details.get("pageIssues") {
+                                if let Some(page_issues_obj) = page_issues.as_object() {
+                                    println!("  \"pageIssues\": {{");
+                                    
+                                    for (page_name, issues) in page_issues_obj {
+                                        if let Some(issue_obj) = issues.as_object() {
+                                            if let (Some(total), Some(breakdown)) = (issue_obj.get("total"), issue_obj.get("breakdown")) {
+                                                println!("    \"{}\": {} ({}),", page_name, total, breakdown.as_str().unwrap_or(""));
+                                            } else {
+                                                println!("    \"{}\": {},", page_name, issues);
+                                            }
+                                        } else {
+                                            println!("    \"{}\": {},", page_name, issues);
+                                        }
+                                    }
+                                    
+                                    println!("  }},");
+                                } else {
+                                    println!("  \"pageIssues\": {},", serde_json::to_string_pretty(page_issues).unwrap_or_else(|_| page_issues.to_string()));
+                                }
+                            }
+                            
+                            // Print total counts
+                            if let Some(total_block_issues) = details.get("totalBlockIssues") {
+                                println!("  \"totalBlockIssues\": {},", total_block_issues);
+                            }
+                            
+                            if let Some(total_page_issues) = details.get("totalPageIssues") {
+                                println!("  \"totalPageIssues\": {}", total_page_issues);
+                            }
+                            
+                            println!("}}");
+                        } else {
+                            // For non-validation diagnostics, just pretty print
+                            println!("Details: {}", serde_json::to_string_pretty(details).unwrap_or_else(|_| details.to_string()));
+                        }
                     }
                     
                     println!("=== END DIAGNOSTIC INFO ===\n");
