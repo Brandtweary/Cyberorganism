@@ -145,8 +145,6 @@ async fn get_sync_status(
     let datastore = state.datastore.lock().unwrap();
     let status = datastore.get_sync_status();
     
-    println!("Sync status requested: {}", serde_json::to_string_pretty(&status).unwrap());
-    
     Json(status)
 }
 

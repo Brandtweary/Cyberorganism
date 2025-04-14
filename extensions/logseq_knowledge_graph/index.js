@@ -87,16 +87,16 @@ async function checkBackendAvailability() {
     });
     
     const available = response.ok;
-    console.log(`Backend server available: ${available}`);
     
     // Only send diagnostic if server is available
     if (available) {
-      await sendDiagnosticInfo('Backend availability check', { available });
+      // Removed redundant diagnostic message
+      // await sendDiagnosticInfo('Backend availability check', { available });
     }
     
     return available;
   } catch (error) {
-    console.error('Backend server not available:', error);
+    console.error('Error checking backend availability:', error);
     return false;
   }
 }
@@ -802,8 +802,8 @@ async function checkIfFullSyncNeeded() {
     const status = await response.json();
     console.log('Sync status from backend:', status);
     
-    // Send diagnostic info about sync status
-    await sendDiagnosticInfo('Sync status from backend', status);
+    // Removed redundant diagnostic message
+    // await sendDiagnosticInfo('Sync status from backend', status);
     
     // Return whether a full sync is needed
     return status.full_sync_needed === true;
@@ -835,8 +835,8 @@ async function updateSyncTimestamp() {
     const result = await response.json();
     console.log('Sync timestamp updated:', result);
     
-    // Send diagnostic info about timestamp update
-    await sendDiagnosticInfo('Sync timestamp updated', result);
+    // Removed redundant diagnostic message
+    // await sendDiagnosticInfo('Sync timestamp updated', result);
     
     return result.success === true;
   } catch (error) {
@@ -1028,10 +1028,10 @@ async function main() {
   setTimeout(async () => {
     console.log('Timeout fired, checking if full sync is needed...');
     
-    // Send diagnostic that timeout fired
-    await sendDiagnosticInfo('Sync check timeout fired', { 
-      time: new Date().toISOString() 
-    });
+    // Removed redundant diagnostic message
+    // await sendDiagnosticInfo('Sync check timeout fired', { 
+    //   time: new Date().toISOString() 
+    // });
     
     const needsFullSync = await checkIfFullSyncNeeded();
     

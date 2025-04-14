@@ -164,10 +164,28 @@ impl LogseqDatastore {
         };
         
         // Try to load existing state, but don't fail if it doesn't exist
-        let _ = datastore.load_state();
+        match datastore.load_state() {
+            Ok(loaded_state) => {
+                println!("Loaded existing datastore state");
+                datastore.state = loaded_state;
+                
+                // Log metadata for debugging
+                if let Some(last_sync) = datastore.state.metadata.last_full_sync {
+                    let dt = DateTime::<Utc>::from_timestamp_millis(last_sync)
+                        .unwrap_or_else(|| Utc::now());
+                    println!("Found last sync timestamp: {} ({})", last_sync, dt.to_rfc3339());
+                } else {
+                    println!("No last sync timestamp found in loaded state");
+                }
+            },
+            Err(e) => {
+                println!("Error loading datastore state: {:?}", e);
+            }
+        }
         
         // Initialize metadata if this is a new datastore
         if datastore.state.metadata.created_at.is_none() {
+            println!("Initializing new datastore");
             let now = Utc::now().timestamp_millis();
             datastore.state.metadata.created_at = Some(now);
             datastore.state.metadata.updated_at = Some(now);
@@ -487,19 +505,44 @@ impl LogseqDatastore {
         Ok(())
     }
     
-    /// Check if a full sync is needed
+    /// Check if a full sync is needed based on time since last sync
     pub fn is_full_sync_needed(&self) -> bool {
+        let now = Utc::now().timestamp_millis();
+        
         match self.state.metadata.last_full_sync {
-            // If we've never done a full sync, we need one
-            None => true,
-            
-            // If it's been more than 24 hours since the last full sync, we need one
+            None => {
+                println!("Full sync needed: No previous sync found");
+                true
+            },
             Some(last_sync) => {
-                let now = Utc::now().timestamp_millis();
                 let hours_since_sync = (now - last_sync) / (1000 * 60 * 60);
-                hours_since_sync > 24
+                let full_sync_needed = hours_since_sync > 2;
+                
+                println!("Last sync: {}, Hours since sync: {}, Full sync needed: {}", 
+                         last_sync, hours_since_sync, full_sync_needed);
+                
+                full_sync_needed
             }
         }
+    }
+    
+    /// Get the current sync status
+    pub fn get_sync_status(&self) -> serde_json::Value {
+        let now = Utc::now().timestamp_millis();
+        let hours_since_sync = self.state.metadata.last_full_sync.map(|last_sync| {
+            let hours = (now - last_sync) / (1000 * 60 * 60);
+            hours
+        });
+        
+        serde_json::json!({
+            "created_at": self.state.metadata.created_at.unwrap_or(0),
+            "updated_at": self.state.metadata.updated_at.unwrap_or(0),
+            "last_full_sync": self.state.metadata.last_full_sync,
+            "hours_since_sync": hours_since_sync,
+            "full_sync_needed": self.is_full_sync_needed(),
+            "node_count": self.state.nodes.len(),
+            "reference_count": self.state.references.len(),
+        })
     }
     
     /// Update the last full sync timestamp
@@ -513,26 +556,6 @@ impl LogseqDatastore {
         self.state.metadata.reference_count = self.state.references.len();
         
         self.save_state()
-    }
-    
-    /// Get sync status information
-    pub fn get_sync_status(&self) -> serde_json::Value {
-        let now = Utc::now().timestamp_millis();
-        
-        let hours_since_sync = match self.state.metadata.last_full_sync {
-            Some(last_sync) => Some((now - last_sync) / (1000 * 60 * 60)),
-            None => None,
-        };
-        
-        serde_json::json!({
-            "node_count": self.state.nodes.len(),
-            "reference_count": self.state.references.len(),
-            "last_full_sync": self.state.metadata.last_full_sync,
-            "hours_since_sync": hours_since_sync,
-            "created_at": self.state.metadata.created_at,
-            "updated_at": self.state.metadata.updated_at,
-            "full_sync_needed": self.is_full_sync_needed(),
-        })
     }
 }
 
