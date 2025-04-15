@@ -16,8 +16,8 @@ pub enum DatastoreError {
     #[error("JSON serialization error: {0}")]
     Serialization(#[from] serde_json::Error),
     
-    #[error("Node not found: {0}")]
-    NodeNotFound(String),
+    // NodeNotFound variant is never constructed. Remove it to resolve the warning.
+    // NodeNotFound(String),
     
     #[error("Reference resolution error: {0}")]
     ReferenceResolution(String),
@@ -123,7 +123,7 @@ struct DatastoreMetadata {
 
 /// Represents the complete datastore state
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
-struct DatastoreState {
+pub(crate) struct DatastoreState {
     /// All nodes in the knowledge graph
     nodes: HashMap<String, Node>,
     
@@ -222,51 +222,44 @@ impl LogseqDatastore {
         Ok(())
     }
     
-    /// Get a node by its internal ID
-    pub fn get_node(&self, id: &str) -> DatastoreResult<&Node> {
-        self.state.nodes.get(id)
-            .ok_or_else(|| DatastoreError::NodeNotFound(id.to_string()))
-    }
+    // pub fn get_node(&self, id: &str) -> DatastoreResult<&Node> {
+    //     self.state.nodes.get(id)
+    //         .ok_or_else(|| DatastoreError::NodeNotFound(id.to_string()))
+    // }
     
-    /// Get a node by its Logseq block UUID
-    pub fn get_node_by_logseq_block_id(&self, logseq_id: &str) -> DatastoreResult<&Node> {
-        let node_id = self.state.block_id_map.get(logseq_id)
-            .ok_or_else(|| DatastoreError::NodeNotFound(format!("Block UUID: {}", logseq_id)))?;
+    // pub fn get_node_by_logseq_block_id(&self, logseq_id: &str) -> DatastoreResult<&Node> {
+    //     let node_id = self.state.block_id_map.get(logseq_id)
+    //         .ok_or_else(|| DatastoreError::NodeNotFound(format!("Block UUID: {}", logseq_id)))?;
         
-        self.get_node(node_id)
-    }
+    //     self.get_node(node_id)
+    // }
     
-    /// Get a node by its Logseq page name
-    pub fn get_node_by_logseq_page_name(&self, page_name: &str) -> DatastoreResult<&Node> {
-        let node_id = self.state.page_name_map.get(page_name)
-            .ok_or_else(|| DatastoreError::NodeNotFound(format!("Page name: {}", page_name)))?;
+    // pub fn get_node_by_logseq_page_name(&self, page_name: &str) -> DatastoreResult<&Node> {
+    //     let node_id = self.state.page_name_map.get(page_name)
+    //         .ok_or_else(|| DatastoreError::NodeNotFound(format!("Page name: {}", page_name)))?;
         
-        self.get_node(node_id)
-    }
+    //     self.get_node(node_id)
+    // }
     
-    /// Get all nodes in the datastore
-    pub fn get_all_nodes(&self) -> Vec<&Node> {
-        self.state.nodes.values().collect()
-    }
+    // pub fn get_all_nodes(&self) -> Vec<&Node> {
+    //     self.state.nodes.values().collect()
+    // }
     
-    /// Get all references in the datastore
-    pub fn get_all_references(&self) -> &[Reference] {
-        &self.state.references
-    }
+    // pub fn get_all_references(&self) -> &[Reference] {
+    //     &self.state.references
+    // }
     
-    /// Get all references where the given node is the source
-    pub fn get_outgoing_references(&self, node_id: &str) -> Vec<&Reference> {
-        self.state.references.iter()
-            .filter(|r| r.source_id == node_id)
-            .collect()
-    }
+    // pub fn get_outgoing_references(&self, node_id: &str) -> Vec<&Reference> {
+    //     self.state.references.iter()
+    //         .filter(|r| r.source_id == node_id)
+    //         .collect()
+    // }
     
-    /// Get all references where the given node is the target
-    pub fn get_incoming_references(&self, node_id: &str) -> Vec<&Reference> {
-        self.state.references.iter()
-            .filter(|r| r.target_id == node_id)
-            .collect()
-    }
+    // pub fn get_incoming_references(&self, node_id: &str) -> Vec<&Reference> {
+    //     self.state.references.iter()
+    //         .filter(|r| r.target_id == node_id)
+    //         .collect()
+    // }
     
     /// Create or update a node from Logseq block data
     pub fn create_or_update_node_from_logseq_block(&mut self, block_data: &LogseqBlockData) -> DatastoreResult<String> {

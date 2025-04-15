@@ -35,7 +35,8 @@ struct ApiResponse {
 struct LogseqData {
     source: String,
     timestamp: String,
-    graphName: String,
+    // #[serde(rename = "graphName")]
+    // graph_name: String,
     #[serde(default)]
     type_: Option<String>,
     payload: String,
