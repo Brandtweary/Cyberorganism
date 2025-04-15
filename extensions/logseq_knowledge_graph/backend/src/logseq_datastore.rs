@@ -30,7 +30,7 @@ pub enum DatastoreError {
 pub type DatastoreResult<T> = Result<T, DatastoreError>;
 
 /// Type of node in the knowledge graph
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub enum NodeType {
     /// A Logseq page
     Page,
@@ -49,7 +49,7 @@ pub struct Node {
     pub logseq_id: String,
     
     /// Type of node (Page or Block)
-    pub node_type: NodeType,
+    pub kind: NodeType,
     
     /// Content of the node (block content or page name)
     pub content: String,
@@ -71,7 +71,7 @@ pub struct Node {
 }
 
 /// Type of reference between nodes
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub enum ReferenceType {
     /// Reference to a page: [[Page Name]]
     PageRef,
@@ -82,7 +82,7 @@ pub enum ReferenceType {
     /// Tag reference: #tag
     Tag,
     
-    /// Property reference: key:: value
+    /// Property reference: `key::` value
     Property,
     
     /// Parent-child relationship
@@ -123,7 +123,7 @@ struct DatastoreMetadata {
 
 /// Represents the complete datastore state
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
-pub(crate) struct DatastoreState {
+pub struct DatastoreState {
     /// All nodes in the knowledge graph
     nodes: HashMap<String, Node>,
     
@@ -172,14 +172,14 @@ impl LogseqDatastore {
                 // Log metadata for debugging
                 if let Some(last_sync) = datastore.state.metadata.last_full_sync {
                     let dt = DateTime::<Utc>::from_timestamp_millis(last_sync)
-                        .unwrap_or_else(|| Utc::now());
+                        .unwrap_or_else(Utc::now);
                     println!("Found last sync timestamp: {} ({})", last_sync, dt.to_rfc3339());
                 } else {
                     println!("No last sync timestamp found in loaded state");
                 }
             },
             Err(e) => {
-                println!("Error loading datastore state: {:?}", e);
+                println!("Error loading datastore state: {e:?}");
             }
         }
         
@@ -264,20 +264,17 @@ impl LogseqDatastore {
     /// Create or update a node from Logseq block data
     pub fn create_or_update_node_from_logseq_block(&mut self, block_data: &LogseqBlockData) -> DatastoreResult<String> {
         let logseq_id = &block_data.id;
-        let node_id = if let Some(existing_id) = self.state.block_id_map.get(logseq_id) {
-            existing_id.clone()
-        } else {
-            Uuid::new_v4().to_string()
-        };
+        let node_id = self.state.block_id_map.get(logseq_id)
+            .map_or_else(|| Uuid::new_v4().to_string(), std::clone::Clone::clone);
         
         // Create or update the node
         let node = Node {
             id: node_id.clone(),
             logseq_id: logseq_id.clone(),
-            node_type: NodeType::Block,
+            kind: NodeType::Block,
             content: block_data.content.clone(),
-            created_at: parse_datetime(&block_data.created)?,
-            updated_at: parse_datetime(&block_data.updated)?,
+            created_at: parse_datetime(&block_data.created),
+            updated_at: parse_datetime(&block_data.updated),
             parent_id: block_data.parent.clone(),
             children: block_data.children.clone(),
             properties: parse_properties(&block_data.properties),
@@ -312,7 +309,7 @@ impl LogseqDatastore {
         // Process page relationship
         if let Some(page_name) = &block_data.page {
             // Ensure the page exists in our datastore
-            let page_node_id = self.ensure_page_exists(page_name)?;
+            let page_node_id = self.ensure_page_exists(page_name);
             
             // If this is a root block (no parent), add it to the page's children
             if block_data.parent.is_none() {
@@ -338,20 +335,17 @@ impl LogseqDatastore {
     /// Create or update a node from Logseq page data
     pub fn create_or_update_node_from_logseq_page(&mut self, page_data: &LogseqPageData) -> DatastoreResult<String> {
         let page_name = &page_data.name;
-        let node_id = if let Some(existing_id) = self.state.page_name_map.get(page_name) {
-            existing_id.clone()
-        } else {
-            Uuid::new_v4().to_string()
-        };
+        let node_id = self.state.page_name_map.get(page_name)
+            .map_or_else(|| Uuid::new_v4().to_string(), std::clone::Clone::clone);
         
         // Create or update the node
         let node = Node {
             id: node_id.clone(),
             logseq_id: page_name.clone(),
-            node_type: NodeType::Page,
+            kind: NodeType::Page,
             content: page_name.clone(),
-            created_at: parse_datetime(&page_data.created)?,
-            updated_at: parse_datetime(&page_data.updated)?,
+            created_at: parse_datetime(&page_data.created),
+            updated_at: parse_datetime(&page_data.updated),
             parent_id: None,
             children: page_data.blocks.clone(),
             properties: parse_properties(&page_data.properties),
@@ -380,9 +374,9 @@ impl LogseqDatastore {
     }
     
     /// Ensure a page exists in our datastore, creating it if necessary
-    fn ensure_page_exists(&mut self, page_name: &str) -> DatastoreResult<String> {
+    fn ensure_page_exists(&mut self, page_name: &str) -> String {
         if let Some(page_id) = self.state.page_name_map.get(page_name) {
-            return Ok(page_id.clone());
+            return page_id.clone();
         }
         
         // Page doesn't exist, create a placeholder
@@ -391,7 +385,7 @@ impl LogseqDatastore {
         let node = Node {
             id: node_id.clone(),
             logseq_id: page_name.to_string(),
-            node_type: NodeType::Page,
+            kind: NodeType::Page,
             content: page_name.to_string(),
             created_at: Utc::now(),
             updated_at: Utc::now(),
@@ -403,7 +397,7 @@ impl LogseqDatastore {
         self.state.nodes.insert(node_id.clone(), node);
         self.state.page_name_map.insert(page_name.to_string(), node_id.clone());
         
-        Ok(node_id)
+        node_id
     }
     
     /// Add a reference to the datastore
@@ -425,7 +419,7 @@ impl LogseqDatastore {
         match reference.r#type.as_str() {
             "page" => {
                 // Ensure the referenced page exists
-                let target_node_id = self.ensure_page_exists(&reference.name)?;
+                let target_node_id = self.ensure_page_exists(&reference.name);
                 
                 // Add the reference
                 self.add_reference(Reference {
@@ -450,8 +444,8 @@ impl LogseqDatastore {
                     let node = Node {
                         id: target_node_id.clone(),
                         logseq_id: reference.id.clone(),
-                        node_type: NodeType::Block,
-                        content: "".to_string(), // Placeholder content
+                        kind: NodeType::Block,
+                        content: String::new(), // Placeholder content
                         created_at: Utc::now(),
                         updated_at: Utc::now(),
                         parent_id: None,
@@ -473,7 +467,7 @@ impl LogseqDatastore {
             "tag" => {
                 // Tags are treated as special pages
                 let tag_name = format!("#{}", reference.name);
-                let target_node_id = self.ensure_page_exists(&tag_name)?;
+                let target_node_id = self.ensure_page_exists(&tag_name);
                 
                 // Add the reference
                 self.add_reference(Reference {
@@ -502,29 +496,25 @@ impl LogseqDatastore {
     pub fn is_full_sync_needed(&self) -> bool {
         let now = Utc::now().timestamp_millis();
         
-        match self.state.metadata.last_full_sync {
-            None => {
-                println!("Full sync needed: No previous sync found");
-                true
-            },
-            Some(last_sync) => {
-                let hours_since_sync = (now - last_sync) / (1000 * 60 * 60);
-                let full_sync_needed = hours_since_sync > 2;
-                
-                println!("Last sync: {}, Hours since sync: {}, Full sync needed: {}", 
-                         last_sync, hours_since_sync, full_sync_needed);
-                
-                full_sync_needed
-            }
-        }
+        self.state.metadata.last_full_sync.map_or_else(|| {
+            println!("Full sync needed: No previous sync found");
+            true
+        }, |last_sync| {
+            let hours_since_sync = (now - last_sync) / (1000 * 60 * 60);
+            let full_sync_needed = hours_since_sync > 2;
+            
+            println!("Last sync: {last_sync}, Hours since sync: {hours_since_sync}, Full sync needed: {full_sync_needed}");
+            
+            full_sync_needed
+        })
     }
     
     /// Get the current sync status
     pub fn get_sync_status(&self) -> serde_json::Value {
         let now = Utc::now().timestamp_millis();
         let hours_since_sync = self.state.metadata.last_full_sync.map(|last_sync| {
-            let hours = (now - last_sync) / (1000 * 60 * 60);
-            hours
+            
+            (now - last_sync) / (1000 * 60 * 60)
         });
         
         serde_json::json!({
@@ -554,7 +544,7 @@ impl LogseqDatastore {
 
 /// Data structures for Logseq data received from the plugin
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct LogseqBlockData {
     pub id: String,
     pub content: String,
@@ -613,7 +603,7 @@ impl LogseqBlockData {
     }
 }
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct LogseqPageData {
     pub name: String,
     #[serde(deserialize_with = "deserialize_timestamp")]
@@ -654,7 +644,7 @@ impl LogseqPageData {
     }
 }
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct LogseqReference {
     #[serde(rename = "type")]
     pub r#type: String,
@@ -671,7 +661,7 @@ where
 {
     struct TimestampVisitor;
 
-    impl<'de> serde::de::Visitor<'de> for TimestampVisitor {
+    impl serde::de::Visitor<'_> for TimestampVisitor {
         type Value = String;
 
         fn expecting(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
@@ -713,36 +703,36 @@ where
 // Helper functions
 
 /// Parse a datetime string from Logseq
-fn parse_datetime(datetime_str: &str) -> DatastoreResult<DateTime<Utc>> {
+fn parse_datetime(datetime_str: &str) -> DateTime<Utc> {
     // Try parsing with different formats
     if let Ok(dt) = DateTime::parse_from_rfc3339(datetime_str) {
-        return Ok(dt.with_timezone(&Utc));
+        return dt.with_timezone(&Utc);
     }
     
     // Try ISO 8601 format
     if let Ok(dt) = DateTime::parse_from_str(datetime_str, "%Y-%m-%dT%H:%M:%S%.fZ") {
-        return Ok(dt.with_timezone(&Utc));
+        return dt.with_timezone(&Utc);
     }
     
     // Try Unix timestamp (milliseconds)
-    if let Ok(timestamp) = datetime_str.parse::<i64>() {
+    if let Ok(timestamp_millis) = datetime_str.parse::<i64>() {
         // Handle both millisecond and second timestamps
-        let timestamp_millis = if timestamp > 1_000_000_000_000 {
+        let timestamp_millis = if timestamp_millis > 1_000_000_000_000 {
             // Already in milliseconds
-            timestamp
+            timestamp_millis
         } else {
             // Convert seconds to milliseconds
-            timestamp * 1000
+            timestamp_millis * 1000
         };
         
         if let Some(dt) = DateTime::from_timestamp_millis(timestamp_millis) {
-            return Ok(dt);
+            return dt;
         }
     }
     
     // If all parsing attempts fail, log the issue and use current time
-    println!("Warning: Could not parse datetime '{}', using current time", datetime_str);
-    Ok(Utc::now())
+    println!("Warning: Could not parse datetime '{datetime_str}', using current time");
+    Utc::now()
 }
 
 /// Parse properties from a JSON value
