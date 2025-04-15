@@ -348,10 +348,13 @@ fn handle_batch_blocks(state: Arc<AppState>, payload: &str) -> Result<String, St
     let mut error_count = 0;
     let total_blocks = blocks.len();
     
+    // Get a single lock on the datastore for the entire batch
+    let mut datastore = state.datastore.lock().unwrap();
+    
     for block_data in blocks {
         // Validate and process each block
         if block_data.validate().is_ok() {
-            match handle_block_data(state.clone(), &serde_json::to_string(&block_data).unwrap_or_default()) {
+            match datastore.create_or_update_node_from_logseq_block(&block_data) {
                 Ok(_) => {
                     success_count += 1;
                 },
@@ -363,6 +366,16 @@ fn handle_batch_blocks(state: Arc<AppState>, payload: &str) -> Result<String, St
             error_count += 1;
         }
     }
+    
+    // Save state once after processing the entire batch
+    if success_count > 0 {
+        if let Err(e) = datastore.save_state() {
+            println!("Error saving state after batch processing: {e:?}");
+        }
+    }
+    
+    // Release the lock
+    drop(datastore);
     
     // Report results
     if error_count == 0 {
@@ -386,10 +399,13 @@ fn handle_batch_pages(state: Arc<AppState>, payload: &str) -> Result<String, Str
     let mut error_count = 0;
     let total_pages = pages.len();
     
+    // Get a single lock on the datastore for the entire batch
+    let mut datastore = state.datastore.lock().unwrap();
+    
     for page_data in pages {
         // Validate and process each page
         if page_data.validate().is_ok() {
-            match handle_page_data(state.clone(), &serde_json::to_string(&page_data).unwrap_or_default()) {
+            match datastore.create_or_update_node_from_logseq_page(&page_data) {
                 Ok(_) => {
                     success_count += 1;
                 },
@@ -401,6 +417,16 @@ fn handle_batch_pages(state: Arc<AppState>, payload: &str) -> Result<String, Str
             error_count += 1;
         }
     }
+    
+    // Save state once after processing the entire batch
+    if success_count > 0 {
+        if let Err(e) = datastore.save_state() {
+            println!("Error saving state after batch processing: {e:?}");
+        }
+    }
+    
+    // Release the lock
+    drop(datastore);
     
     // Report results
     if error_count == 0 {
