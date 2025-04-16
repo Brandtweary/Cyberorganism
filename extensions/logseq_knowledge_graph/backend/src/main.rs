@@ -5,7 +5,7 @@ use axum::{
 };
 use serde::{Deserialize, Serialize};
 use std::net::SocketAddr;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 use std::process::{Command, exit};
 use std::io::Error as IoError;
@@ -42,9 +42,88 @@ struct LogseqData {
     payload: String,
 }
 
+// Configuration structure
+#[derive(Debug, Deserialize)]
+struct Config {
+    backend: BackendConfig,
+}
+
+#[derive(Debug, Deserialize)]
+struct BackendConfig {
+    host: String,
+    port: u16,
+    max_port_attempts: u16,
+}
+
+// Default configuration
+impl Default for Config {
+    fn default() -> Self {
+        Config {
+            backend: BackendConfig {
+                host: "127.0.0.1".to_string(),
+                port: 3000,
+                max_port_attempts: 10,
+            },
+        }
+    }
+}
+
+// Load configuration from file
+fn load_config() -> Config {
+    // Determine the executable directory
+    let exe_path = std::env::current_exe().unwrap_or_else(|_| PathBuf::from("."));
+    let exe_dir = exe_path.parent().unwrap_or_else(|| Path::new("."));
+    
+    // Try to find config.yaml in parent directories
+    let mut config_path = PathBuf::from(exe_dir);
+    let mut found = false;
+    
+    // First check if config exists in the current directory
+    if config_path.join("config.yaml").exists() {
+        found = true;
+    } else {
+        // Try up to 3 parent directories
+        for _ in 0..3 {
+            config_path = match config_path.parent() {
+                Some(parent) => parent.to_path_buf(),
+                None => break,
+            };
+            
+            if config_path.join("config.yaml").exists() {
+                found = true;
+                break;
+            }
+        }
+    }
+    
+    // If config.yaml was found, try to load it
+    if found {
+        let config_file = config_path.join("config.yaml");
+        match fs::read_to_string(&config_file) {
+            Ok(contents) => {
+                match serde_yaml::from_str(&contents) {
+                    Ok(config) => {
+                        println!("Loaded configuration from {:?}", config_file);
+                        return config;
+                    },
+                    Err(e) => {
+                        println!("Error parsing config.yaml: {}", e);
+                    }
+                }
+            },
+            Err(e) => {
+                println!("Error reading config.yaml: {}", e);
+            }
+        }
+    }
+    
+    // If we get here, use default configuration
+    println!("Using default configuration");
+    Config::default()
+}
+
 // Constants
 const PID_FILE: &str = "logseq_knowledge_graph_server.pid";
-const DEFAULT_PORT: u16 = 3000;
 
 // Check if a port is available
 fn is_port_available(port: u16) -> bool {
@@ -553,6 +632,9 @@ async fn main() -> Result<(), Box<dyn Error>> {
     // Set up exit handler to clean up PID file
     setup_exit_handler();
     
+    // Load configuration
+    let config = load_config();
+    
     // Check for previous instance and terminate it
     if fs::metadata(PID_FILE).is_ok() {
         terminate_previous_instance();
@@ -581,15 +663,15 @@ async fn main() -> Result<(), Box<dyn Error>> {
         .route("/sync/update", post(update_sync_timestamp))
         .with_state(app_state);
 
-    // Try to use the default port
-    let mut port = DEFAULT_PORT;
+    // Try to use the configured port
+    let mut port = config.backend.port;
     
-    // If default port is not available, find another one
+    // If configured port is not available, find another one
     if !is_port_available(port) {
-        println!("Default port {port} is not available.");
+        println!("Configured port {port} is not available.");
         
         // Try a few alternative ports
-        for p in (DEFAULT_PORT + 1)..=(DEFAULT_PORT + 10) {
+        for p in (port + 1)..=(port + config.backend.max_port_attempts) {
             if is_port_available(p) {
                 port = p;
                 println!("Using alternative port: {port}");
@@ -597,12 +679,25 @@ async fn main() -> Result<(), Box<dyn Error>> {
             }
         }
         
-        if port == DEFAULT_PORT {
+        if port == config.backend.port {
             return Err(Box::<dyn Error>::from("Could not find an available port"));
         }
     }
     
-    let addr = SocketAddr::from(([127, 0, 0, 1], port));
+    let host_parts: Vec<&str> = config.backend.host.split('.').collect();
+    let host_addr = if host_parts.len() == 4 {
+        // Parse IP address like "127.0.0.1"
+        let parts: Result<Vec<u8>, _> = host_parts.iter().map(|s| s.parse::<u8>()).collect();
+        match parts {
+            Ok(bytes) if bytes.len() == 4 => [bytes[0], bytes[1], bytes[2], bytes[3]],
+            _ => [127, 0, 0, 1], // Fallback to localhost
+        }
+    } else {
+        // Default to localhost if not a valid IP
+        [127, 0, 0, 1]
+    };
+    
+    let addr = SocketAddr::from((host_addr, port));
     println!("Backend server listening on {addr}");
 
     // Run the server

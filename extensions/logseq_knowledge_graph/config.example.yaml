@@ -1,0 +1,12 @@
+# Logseq Knowledge Graph Configuration Example
+# Copy this file to config.yaml and modify as needed
+
+# Backend server configuration
+backend:
+  # Host to bind the server to
+  host: 127.0.0.1
+  # Port for the backend server
+  port: 3000
+  # Maximum number of alternative ports to try if the default is unavailable
+  # Will try ports from port to port+max_port_attempts
+  max_port_attempts: 10

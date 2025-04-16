@@ -3,6 +3,11 @@
  * Connects Logseq to a Rust-based knowledge graph backend
  */
 
+// Import the API module
+const api = require('./api');
+// Import configuration
+const config = require('./config');
+
 // Load the API module for backend communication
 // We'll use a script tag in the HTML to load api.js before this file
 
@@ -434,7 +439,7 @@ async function main() {
     
     // Get sync status from backend
     try {
-      const response = await fetch('http://127.0.0.1:3000/sync/status', {
+      const response = await fetch(window.KnowledgeGraphAPI.getBackendUrl('/sync/status'), {
         method: 'GET',
         headers: {
           'Content-Type': 'application/json',

@@ -3,8 +3,22 @@
  * Handles all communication with the Rust backend server
  */
 
+// Import configuration
+const config = require('./config');
+
 // Create a global API object to hold all the functions
 window.KnowledgeGraphAPI = {};
+
+/**
+ * Get the backend URL for a specific endpoint
+ * @param {string} endpoint - The endpoint path (e.g., '/data', '/')
+ * @returns {string} - The complete backend URL
+ */
+window.KnowledgeGraphAPI.getBackendUrl = function(endpoint) {
+  const host = config.backend.host;
+  const port = config.backend.port;
+  return `http://${host}:${port}${endpoint}`;
+};
 
 /**
  * Send data to the backend server
@@ -12,7 +26,7 @@ window.KnowledgeGraphAPI = {};
  * @returns {Promise<boolean>} - Whether the data was sent successfully
  */
 window.KnowledgeGraphAPI.sendToBackend = async function(data) {
-  const backendUrl = 'http://127.0.0.1:3000/data';
+  const backendUrl = window.KnowledgeGraphAPI.getBackendUrl('/data');
   
   try {
     console.log(`Sending data to backend: ${backendUrl}`);
@@ -72,7 +86,7 @@ window.KnowledgeGraphAPI.sendDiagnosticInfo = async function(message, details = 
 window.KnowledgeGraphAPI.checkBackendAvailability = async function() {
   console.log('Checking backend server availability...');
   try {
-    const response = await fetch('http://127.0.0.1:3000/', {
+    const response = await fetch(window.KnowledgeGraphAPI.getBackendUrl('/'), {
       method: 'GET',
       headers: {
         'Content-Type': 'application/json',
@@ -101,7 +115,7 @@ window.KnowledgeGraphAPI.checkIfFullSyncNeeded = async function() {
     }
     
     // Query the backend for sync status
-    const response = await fetch('http://127.0.0.1:3000/sync/status', {
+    const response = await fetch(window.KnowledgeGraphAPI.getBackendUrl('/sync/status'), {
       method: 'GET',
       headers: {
         'Content-Type': 'application/json',
@@ -134,7 +148,7 @@ window.KnowledgeGraphAPI.checkIfFullSyncNeeded = async function() {
  */
 window.KnowledgeGraphAPI.updateSyncTimestamp = async function() {
   try {
-    const response = await fetch('http://127.0.0.1:3000/sync/update', {
+    const response = await fetch(window.KnowledgeGraphAPI.getBackendUrl('/sync/update'), {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',

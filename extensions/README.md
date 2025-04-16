@@ -30,6 +30,23 @@ The `logseq_knowledge_graph` module provides integration between Logseq (a perso
 
 For testing purposes, we use a `logseq_dummy_graph` instance that contains sample data.
 
+#### Configuration
+
+The extension uses its own configuration file separate from the main AIChat configuration:
+
+1. Copy `extensions/logseq_knowledge_graph/config.example.yaml` to `extensions/logseq_knowledge_graph/config.yaml`
+2. Edit the settings as needed:
+   ```yaml
+   backend:
+     host: 127.0.0.1     # Host to bind the server to
+     port: 3000          # Default port for the backend server
+     max_port_attempts: 10  # Number of alternative ports to try if default is busy
+   ```
+
+This configuration is used by both the JavaScript frontend and Rust backend to ensure consistent settings. If the default port is unavailable, the server will automatically try the next available port.
+
+Note: The `config.yaml` file is ignored by git to allow for local customization without affecting the repository.
+
 ## Development Guidelines
 
 When adding new features to Cyberorganism:
