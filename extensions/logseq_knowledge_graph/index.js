@@ -3,6 +3,13 @@
  * Connects Logseq to a Rust-based knowledge graph backend
  */
 
+// Load the API module for backend communication
+// We'll use a script tag in the HTML to load api.js before this file
+
+//=============================================================================
+// LOGSEQ API INTERACTION
+//=============================================================================
+
 // Test the Logseq API connection
 async function testLogseqAPI() {
   console.log('Attempting to call Logseq API...');
@@ -24,667 +31,267 @@ async function testLogseqAPI() {
   }
 }
 
+//=============================================================================
+// BACKEND COMMUNICATION
+// These functions now use the global KnowledgeGraphAPI object
+//=============================================================================
+
 // Send data to the backend server
 async function sendToBackend(data) {
-  const backendUrl = 'http://127.0.0.1:3000/data';
-  
-  try {
-    console.log(`Sending data to backend: ${backendUrl}`);
-    const response = await fetch(backendUrl, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify(data),
-    });
-
-    if (response.ok) {
-      console.log('Data sent successfully to backend.');
-      logseq.App.showMsg('Sent data to backend successfully!', 'success');
-      return true;
-    } else {
-      console.error(`Backend server responded with status: ${response.status}`);
-      logseq.App.showMsg(`Error sending data: Backend responded with ${response.status}`, 'error');
-      return false;
-    }
-  } catch (error) {
-    console.error('Failed to send data to backend:', error);
-    logseq.App.showMsg('Failed to connect to backend server. Is it running?', 'error');
-    return false;
-  }
+  // Use the global KnowledgeGraphAPI object's sendToBackend function
+  return KnowledgeGraphAPI.sendToBackend(data);
 }
 
 // Send diagnostic information to the backend server
 async function sendDiagnosticInfo(message, details = {}) {
-  console.log(`DIAGNOSTIC: ${message}`, details);
-  
-  try {
-    const graph = await logseq.App.getCurrentGraph();
-    await sendToBackend({
-      source: 'Diagnostic',
-      timestamp: new Date().toISOString(),
-      graphName: graph ? graph.name : 'unknown',
-      type_: 'diagnostic',
-      payload: JSON.stringify({
-        message,
-        details
-      })
-    });
-  } catch (error) {
-    console.error('Error sending diagnostic info:', error);
-  }
+  // Use the global KnowledgeGraphAPI object's sendDiagnosticInfo function
+  return KnowledgeGraphAPI.sendDiagnosticInfo(message, details);
 }
 
 // Check if backend server is available
 async function checkBackendAvailability() {
-  console.log('Checking backend server availability...');
-  try {
-    const response = await fetch('http://127.0.0.1:3000/', {
-      method: 'GET',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-    });
-    
-    const available = response.ok;
-    
-    // Only send diagnostic if server is available
-    if (available) {
-      // Removed redundant diagnostic message
-      // await sendDiagnosticInfo('Backend availability check', { available });
-    }
-    
-    return available;
-  } catch (error) {
-    console.error('Error checking backend availability:', error);
-    return false;
-  }
+  // Use the global KnowledgeGraphAPI object's checkBackendAvailability function
+  return KnowledgeGraphAPI.checkBackendAvailability();
 }
+
+//=============================================================================
+// DATA PROCESSING & EXTRACTION
+// These functions now use the global KnowledgeGraphDataProcessor object
+//=============================================================================
 
 // Extract all references from content using regex
 function extractReferencesFromContent(content) {
-  if (!content) return [];
-  
-  const references = [];
-  
-  // Extract page references [[Page Name]]
-  const pageRefRegex = /\[\[(.*?)\]\]/g;
-  let match;
-  while ((match = pageRefRegex.exec(content)) !== null) {
-    references.push({
-      type: 'page',
-      name: match[1].trim()
-    });
-  }
-  
-  // Extract block references ((block-id))
-  const blockRefRegex = /\(\((.*?)\)\)/g;
-  while ((match = blockRefRegex.exec(content)) !== null) {
-    references.push({
-      type: 'block',
-      id: match[1].trim()
-    });
-  }
-  
-  // Extract hashtags #tag
-  const tagRegex = /#([a-zA-Z0-9_-]+)/g;
-  while ((match = tagRegex.exec(content)) !== null) {
-    // Don't include the # symbol in the tag name
-    references.push({
-      type: 'tag',
-      name: match[1].trim()
-    });
-  }
-  
-  // Extract properties key:: value
-  const propRegex = /([a-zA-Z0-9_-]+)::\s*(.*?)($|\n)/g;
-  while ((match = propRegex.exec(content)) !== null) {
-    const propName = match[1].trim();
-    const propValue = match[2].trim();
-    
-    // The property name itself is a reference
-    references.push({
-      type: 'property',
-      name: propName
-    });
-    
-    // Check if the property value contains references
-    // We don't need to extract these since they'll be caught by the other regex patterns
-    // when we process the full content
-  }
-  
-  return references;
+  return KnowledgeGraphDataProcessor.extractReferencesFromContent(content);
 }
 
 // Process block data and extract relevant information
 async function processBlockData(block) {
-  try {
-    // Get full block content and metadata with includeChildren option
-    const blockEntity = await logseq.Editor.getBlock(block.uuid, { includeChildren: true });
-    if (!blockEntity) {
-      console.error(`Failed to get block with UUID: ${block.uuid}`);
-      return null;
-    }
-    
-    // Filter out empty blocks - they don't belong in a knowledge graph
-    if (!blockEntity.content || blockEntity.content.trim() === '') {
-      // Just skip this block entirely without adding to validation issues
-      return null;
-    }
-    
-    // Get the page that contains this block
-    const page = blockEntity.page ? await logseq.Editor.getPage(blockEntity.page.id) : null;
-    
-    // Extract all references from the content using our unified regex approach
-    const references = extractReferencesFromContent(blockEntity.content);
-    
-    // Get parent UUID instead of parent ID
-    let parentUUID = null;
-    if (blockEntity.parent) {
-      // If parent is an object with a uuid property, use that
-      if (blockEntity.parent.uuid) {
-        parentUUID = blockEntity.parent.uuid;
-      } 
-      // If we only have the parent ID, try to get the block to get its UUID
-      else if (blockEntity.parent.id) {
-        try {
-          const parentBlock = await logseq.Editor.getBlock(blockEntity.parent.id, { includeChildren: true });
-          if (parentBlock) {
-            parentUUID = parentBlock.uuid;
-          }
-        } catch (e) {
-          // Only log actual errors
-          console.warn(`Could not resolve parent ID ${blockEntity.parent.id} to UUID for block ${blockEntity.uuid}`);
-        }
-      }
-    }
-    
-    return {
-      id: blockEntity.uuid,
-      content: blockEntity.content,
-      created: blockEntity.created || new Date().toISOString(),
-      updated: blockEntity.updated || new Date().toISOString(),
-      parent: parentUUID,
-      children: blockEntity.children ? blockEntity.children.map(child => 
-        typeof child === 'object' && child.uuid ? child.uuid : 
-        typeof child === 'string' ? child : null
-      ).filter(Boolean) : [],
-      page: page ? page.name : null,
-      properties: blockEntity.properties || {},
-      references: references
-    };
-  } catch (error) {
-    // Only log actual errors
-    console.error('Error processing block data:', error);
-    return null;
-  }
+  return KnowledgeGraphDataProcessor.processBlockData(block);
 }
 
 // Process page data and extract relevant information
 async function processPageData(page) {
-  try {
-    // Skip pages without names
-    if (!page.name || page.name.trim() === '') {
-      validationIssues.addPageIssue('unknown', ['Nameless page - skipped']);
-      return null; // Skip this page entirely
-    }
-    
-    // Get page properties and metadata
-    const pageEntity = await logseq.Editor.getPage(page.name);
-    if (!pageEntity) {
-      console.error(`Failed to get page with name: ${page.name}`);
-      return null;
-    }
-    
-    // Get all blocks in the page
-    const blocks = await logseq.Editor.getPageBlocksTree(page.name);
-    const blockIds = blocks ? blocks.map(block => block.uuid) : [];
-    
-    // Get page properties
-    const properties = pageEntity.properties || {};
-    
-    return {
-      name: page.name,
-      created: pageEntity.created || new Date().toISOString(),
-      updated: pageEntity.updated || new Date().toISOString(),
-      properties: properties,
-      blocks: blockIds
-    };
-  } catch (error) {
-    console.error('Error processing page data:', error);
-    return null;
-  }
+  return KnowledgeGraphDataProcessor.processPageData(page);
 }
+
+//=============================================================================
+// DATA VALIDATION
+// These functions now use the global KnowledgeGraphDataProcessor object
+//=============================================================================
 
 // Validate block data before sending to backend
 function validateBlockData(blockData) {
-  if (!blockData) {
-    console.error('Block data is null or undefined');
-    return { valid: false, errors: ['Block data is null or undefined'] };
-  }
-  
-  const errors = [];
-  
-  // Check required fields
-  if (!blockData.id || typeof blockData.id !== 'string') {
-    errors.push(`Invalid block ID: ${blockData.id}`);
-  }
-  
-  // Check for missing or empty content
-  if (blockData.content === undefined) {
-    errors.push('Missing block content field');
-  } else if (blockData.content === null || blockData.content.trim() === '') {
-    errors.push('Block content is empty');
-  }
-  
-  // Validate created/updated timestamps
-  if (!blockData.created || typeof blockData.created !== 'string') {
-    errors.push(`Invalid created timestamp: ${blockData.created}`);
-  }
-  
-  if (!blockData.updated || typeof blockData.updated !== 'string') {
-    errors.push(`Invalid updated timestamp: ${blockData.updated}`);
-  }
-  
-  // Validate parent (should be null or string UUID)
-  if (blockData.parent !== null && typeof blockData.parent !== 'string') {
-    errors.push(`Invalid parent reference: ${blockData.parent}`);
-  }
-  
-  // Validate children (should be array of string UUIDs)
-  if (!Array.isArray(blockData.children)) {
-    errors.push(`Children is not an array: ${blockData.children}`);
-  } else {
-    for (let i = 0; i < blockData.children.length; i++) {
-      const child = blockData.children[i];
-      if (typeof child !== 'string') {
-        errors.push(`Invalid child reference at index ${i}: ${child}`);
-      }
-    }
-  }
-  
-  // Validate references
-  if (!Array.isArray(blockData.references)) {
-    errors.push(`References is not an array: ${blockData.references}`);
-  } else {
-    for (let i = 0; i < blockData.references.length; i++) {
-      const ref = blockData.references[i];
-      if (!ref.type) {
-        errors.push(`Missing reference type at index ${i}`);
-      }
-    }
-  }
-  
-  return { 
-    valid: errors.length === 0,
-    errors: errors
-  };
+  return KnowledgeGraphDataProcessor.validateBlockData(blockData);
 }
 
 // Validate page data before sending to backend
 function validatePageData(pageData) {
-  if (!pageData) {
-    console.error('Page data is null or undefined');
-    return { valid: false, errors: ['Page data is null or undefined'] };
-  }
-  
-  const errors = [];
-  
-  // Check required fields
-  if (!pageData.name || typeof pageData.name !== 'string') {
-    errors.push(`Invalid page name: ${pageData.name}`);
-  }
-  
-  // Validate created/updated timestamps
-  if (!pageData.created || typeof pageData.created !== 'string') {
-    errors.push(`Invalid created timestamp: ${pageData.created}`);
-  }
-  
-  if (!pageData.updated || typeof pageData.updated !== 'string') {
-    errors.push(`Invalid updated timestamp: ${pageData.updated}`);
-  }
-  
-  // Validate blocks (should be array of string UUIDs)
-  if (!Array.isArray(pageData.blocks)) {
-    errors.push(`Blocks is not an array: ${pageData.blocks}`);
-  } else {
-    for (let i = 0; i < pageData.blocks.length; i++) {
-      const block = pageData.blocks[i];
-      if (typeof block !== 'string') {
-        errors.push(`Invalid block reference at index ${i}: ${block}`);
-      }
-    }
-  }
-  
-  return { 
-    valid: errors.length === 0,
-    errors: errors
-  };
+  return KnowledgeGraphDataProcessor.validatePageData(pageData);
 }
 
-// Global validation issue tracker
-const validationIssues = {
-  blocks: {},
-  pages: {},
-  totalBlockIssues: 0,
-  totalPageIssues: 0,
+//=============================================================================
+// VALIDATION ISSUE TRACKING
+// Now uses the global KnowledgeGraphDataProcessor.validationIssues object
+//=============================================================================
+
+// Global validation issue tracker - reference to the one in KnowledgeGraphDataProcessor
+const validationIssues = KnowledgeGraphDataProcessor.validationIssues;
+
+//=============================================================================
+// REAL-TIME SYNC HANDLING
+//=============================================================================
+
+// Process a batch of pages or blocks
+async function processBatch(type, items, graphName, batchSize = 100) {
+  if (!items || items.length === 0) return;
   
-  // Add a block validation issue
-  addBlockIssue(blockId, pageName, issues) {
-    if (!this.blocks[pageName]) {
-      this.blocks[pageName] = {};
-    }
-    
-    // Parse issues into specific types
-    if (typeof issues === 'string') {
-      issues = [issues];
-    }
-    
-    for (const issue of issues) {
-      const issueType = this.categorizeIssue(issue);
-      if (!this.blocks[pageName][issueType]) {
-        this.blocks[pageName][issueType] = 0;
+  console.log(`Processing ${items.length} ${type}s`);
+  const batch = [];
+  
+  for (const item of items) {
+    try {
+      if (type === 'block') {
+        if (!item.uuid) {
+          console.warn('Skipping block: missing UUID');
+          continue;
+        }
+        const blockData = await processBlockData(item);
+        if (!blockData) {
+          console.warn(`Skipping block ${item.uuid}: processing returned null`);
+          continue;
+        }
+        const validation = validateBlockData(blockData);
+        if (validation.valid) {
+          batch.push(blockData);
+        } else {
+          console.error(`Invalid block data for UUID ${item.uuid}:`, validation.errors);
+          validationIssues.addBlockIssue(blockData.id, blockData.page, validation.errors);
+        }
+      } else if (type === 'page') {
+        if (!item.name) {
+          console.warn('Skipping page: missing name');
+          continue;
+        }
+        const pageData = await processPageData(item);
+        if (!pageData) {
+          console.warn(`Skipping page "${item.name}": processing returned null`);
+          continue;
+        }
+        const validation = validatePageData(pageData);
+        if (validation.valid) {
+          batch.push(pageData);
+        } else {
+          console.error(`Invalid page data for "${item.name}":`, validation.errors);
+          validationIssues.addPageIssue(pageData.name, validation.errors);
+        }
       }
-      this.blocks[pageName][issueType]++;
-      this.totalBlockIssues++;
-    }
-  },
-  
-  // Add a page validation issue
-  addPageIssue(pageName, issues) {
-    if (!this.pages[pageName]) {
-      this.pages[pageName] = {};
-    }
-    
-    // Parse issues into specific types
-    if (typeof issues === 'string') {
-      issues = [issues];
-    }
-    
-    for (const issue of issues) {
-      const issueType = this.categorizeIssue(issue);
-      if (!this.pages[pageName][issueType]) {
-        this.pages[pageName][issueType] = 0;
+
+      if (batch.length >= batchSize) {
+        await sendBatchToBackend(type, batch, graphName);
+        batch.length = 0;
       }
-      this.pages[pageName][issueType]++;
-      this.totalPageIssues++;
+    } catch (error) {
+      const identifier = type === 'block' ? item.uuid : `"${item.name}"`;
+      console.error(`Error processing ${type} ${identifier}:`, error);
     }
-  },
-  
-  // Categorize an issue message into a specific type
-  categorizeIssue(issue) {
-    if (issue.includes('empty') || issue.includes('Empty')) {
-      return 'empty_content';
-    } else if (issue.includes('ID') || issue.includes('id')) {
-      return 'invalid_id';
-    } else if (issue.includes('timestamp')) {
-      return 'invalid_timestamp';
-    } else if (issue.includes('parent')) {
-      return 'invalid_parent';
-    } else if (issue.includes('child') || issue.includes('Children')) {
-      return 'invalid_children';
-    } else if (issue.includes('reference')) {
-      return 'invalid_reference';
-    } else {
-      return 'other';
-    }
-  },
-  
-  // Get a summary of all validation issues
-  getSummary() {
-    const summary = {
-      totalBlockIssues: this.totalBlockIssues,
-      totalPageIssues: this.totalPageIssues,
-      blockIssuesByPage: {},
-      pageIssues: {}
-    };
-    
-    // Summarize block issues by page with issue types
-    for (const pageName in this.blocks) {
-      const issueTypes = this.blocks[pageName];
-      const totalPageIssues = Object.values(issueTypes).reduce((sum, count) => sum + count, 0);
-      
-      // Format as "pageName: count (type1: count1, type2: count2, ...)"
-      const typeBreakdown = Object.entries(issueTypes)
-        .map(([type, count]) => `${this.formatIssueType(type)}: ${count}`)
-        .join(', ');
-      
-      summary.blockIssuesByPage[pageName] = {
-        total: totalPageIssues,
-        breakdown: typeBreakdown,
-        types: issueTypes
-      };
-    }
-    
-    // Summarize page issues with types
-    for (const pageName in this.pages) {
-      const issueTypes = this.pages[pageName];
-      const totalPageIssues = Object.values(issueTypes).reduce((sum, count) => sum + count, 0);
-      
-      const typeBreakdown = Object.entries(issueTypes)
-        .map(([type, count]) => `${this.formatIssueType(type)}: ${count}`)
-        .join(', ');
-      
-      summary.pageIssues[pageName] = {
-        total: totalPageIssues,
-        breakdown: typeBreakdown,
-        types: issueTypes
-      };
-    }
-    
-    return summary;
-  },
-  
-  // Format issue type for display
-  formatIssueType(type) {
-    switch (type) {
-      case 'empty_content': return 'empty block content';
-      case 'invalid_id': return 'invalid ID';
-      case 'invalid_timestamp': return 'invalid timestamp';
-      case 'invalid_parent': return 'invalid parent';
-      case 'invalid_children': return 'invalid children';
-      case 'invalid_reference': return 'invalid reference';
-      case 'other': return 'other issues';
-      default: return type;
-    }
-  },
-  
-  // Reset the tracker
-  reset() {
-    this.blocks = {};
-    this.pages = {};
-    this.totalBlockIssues = 0;
-    this.totalPageIssues = 0;
   }
-};
+
+  // Send any remaining items
+  if (batch.length > 0) {
+    console.log(`Sending remaining ${batch.length} ${type}s`);
+    await sendBatchToBackend(type, batch, graphName);
+  }
+}
 
 // Handle database changes
 async function handleDBChanges(changes) {
+  // Skip if no changes or empty changes array
+  if (!changes || !Array.isArray(changes) || changes.length === 0) {
+    return;
+  }
+  
+  console.log(`Received ${changes.length} database changes`);
+  
+  // Check if backend is available before processing changes
   try {
-    console.log('DB changes detected:', changes.length);
+    const backendAvailable = await checkBackendAvailability();
+    if (!backendAvailable) {
+      console.error('Backend server not available. Changes will not be processed.');
+      return;
+    }
     
-    // Batching containers
-    const batchSize = 20; // Smaller batch size for real-time changes
-    let blockBatch = [];
-    let pageBatch = [];
+    // Get current graph name
+    const graph = await logseq.App.getCurrentGraph();
+    if (!graph || !graph.name) {
+      console.error('Failed to get current graph name.');
+      return;
+    }
+    
+    const graphName = graph.name;
     
     // Process each change
     for (const change of changes) {
-      // Skip non-block and non-page changes
-      if (!change.blocks && !change.pages) continue;
-      
       // Process block changes
       if (change.blocks && change.blocks.length > 0) {
-        for (const block of change.blocks) {
-          const blockData = await processBlockData(block);
-          if (blockData) {
-            const validation = validateBlockData(blockData);
-            if (validation.valid) {
-              // Add to batch instead of sending immediately
-              blockBatch.push(blockData);
-              
-              // Send batch if it reaches the batch size
-              if (blockBatch.length >= batchSize) {
-                const graph = await logseq.App.getCurrentGraph();
-                await sendBatchToBackend('block', blockBatch, graph ? graph.name : 'unknown');
-                blockBatch = [];
-              }
-            } else {
-              console.error('Invalid block data:', validation.errors);
-              validationIssues.addBlockIssue(blockData.id, blockData.page, validation.errors);
-              await sendDiagnosticInfo('Invalid block data', { 
-                errors: validation.errors,
-                blockData: blockData
-              });
-            }
-          }
-        }
+        await processBatch('block', change.blocks, graphName, 20); // Smaller batch size for real-time
       }
       
-      // Process page changes
+      // Process page changes  
       if (change.pages && change.pages.length > 0) {
-        for (const page of change.pages) {
-          const pageData = await processPageData(page);
-          if (pageData) {
-            const validation = validatePageData(pageData);
-            if (validation.valid) {
-              // Add to batch instead of sending immediately
-              pageBatch.push(pageData);
-              
-              // Send batch if it reaches the batch size
-              if (pageBatch.length >= batchSize) {
-                const graph = await logseq.App.getCurrentGraph();
-                await sendBatchToBackend('page', pageBatch, graph ? graph.name : 'unknown');
-                pageBatch = [];
-              }
-            } else {
-              console.error('Invalid page data:', validation.errors);
-              validationIssues.addPageIssue(pageData.name, validation.errors);
-              await sendDiagnosticInfo('Invalid page data', { 
-                errors: validation.errors,
-                pageData: pageData
-              });
-            }
-          }
-        }
+        await processBatch('page', change.pages, graphName, 20);
       }
-    }
-    
-    // Send any remaining blocks in the batch
-    if (blockBatch.length > 0) {
-      const graph = await logseq.App.getCurrentGraph();
-      await sendBatchToBackend('block', blockBatch, graph ? graph.name : 'unknown');
-    }
-    
-    // Send any remaining pages in the batch
-    if (pageBatch.length > 0) {
-      const graph = await logseq.App.getCurrentGraph();
-      await sendBatchToBackend('page', pageBatch, graph ? graph.name : 'unknown');
     }
   } catch (error) {
     console.error('Error handling DB changes:', error);
   }
 }
 
+//=============================================================================
+// FULL DATABASE SYNC
+//=============================================================================
+
 // Sync all pages and blocks in the database
 async function syncFullDatabase() {
+  console.log('Starting full database sync...');
+  
+  // Check if backend is available
+  const backendAvailable = await checkBackendAvailability();
+  if (!backendAvailable) {
+    console.error('Backend server not available. Sync aborted.');
+    logseq.App.showMsg('Backend server not available. Start the server first.', 'error');
+    return false;
+  }
+  
   try {
     // Reset validation issues tracker
     validationIssues.reset();
     
+    // Get current graph
     const graph = await logseq.App.getCurrentGraph();
     if (!graph) {
       console.error('Failed to get current graph.');
+      logseq.App.showMsg('Failed to get current graph.', 'error');
       return false;
     }
     
+    const graphName = graph.name;
     logseq.App.showMsg('Starting full database sync...', 'info');
-    console.log('Starting full database sync...');
     
     // Get all pages
     const allPages = await logseq.Editor.getAllPages();
+    if (!allPages || !Array.isArray(allPages)) {
+      console.error('Failed to fetch pages from database.');
+      logseq.App.showMsg('Failed to fetch pages from database.', 'error');
+      return false;
+    }
+    
     console.log(`Found ${allPages.length} pages to sync.`);
     
     // Track progress
     let pagesProcessed = 0;
     let blocksProcessed = 0;
     
-    // Batching containers
-    const batchSize = 100; // Adjust based on your needs
-    let pageBatch = [];
-    let blockBatch = [];
-    
-    // Process each page
-    for (const page of allPages) {
-      // Skip journal pages if they're too numerous
-      if (page.journalDay && allPages.length > 100) {
-        // Only process recent journal pages (last 30 days)
-        const pageDate = new Date(page.journalDay);
-        const thirtyDaysAgo = new Date();
-        thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
-        
-        if (pageDate < thirtyDaysAgo) {
-          console.log(`Skipping older journal page: ${page.name}`);
-          continue;
-        }
-      }
+    // Process pages in batches
+    for (let i = 0; i < allPages.length; i += 100) {
+      const pageBatch = allPages.slice(i, i + 100);
       
-      // Process page
-      const pageData = await processPageData(page);
-      if (pageData) {
-        const validation = validatePageData(pageData);
-        if (validation.valid) {
-          // Add to page batch instead of sending immediately
-          pageBatch.push(pageData);
+      // Skip older journal pages if there are many pages
+      const filteredBatch = pageBatch.filter(page => {
+        if (page.journalDay && allPages.length > 100) {
+          const pageDate = new Date(page.journalDay);
+          const thirtyDaysAgo = new Date();
+          thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
           
-          // Send batch if it reaches the batch size
-          if (pageBatch.length >= batchSize) {
-            await sendBatchToBackend('page', pageBatch, graph.name);
-            pageBatch.length = 0; // Reset batch more efficiently
+          if (pageDate < thirtyDaysAgo) {
+            console.log(`Skipping older journal page: ${page.name}`);
+            return false;
           }
-        } else {
-          console.error('Invalid page data:', validation.errors);
-          validationIssues.addPageIssue(pageData.name, validation.errors);
-          await sendDiagnosticInfo('Invalid page data', { 
-            errors: validation.errors,
-            pageData: pageData
-          });
         }
-        
-        pagesProcessed++;
-        
-        // Show progress every 10 pages
-        if (pagesProcessed % 10 === 0) {
-          logseq.App.showMsg(`Syncing pages: ${pagesProcessed}/${allPages.length}`, 'info');
-        }
+        return true;
+      });
+      
+      await processBatch('page', filteredBatch, graphName);
+      pagesProcessed += filteredBatch.length;
+      
+      if (pagesProcessed % 10 === 0) {
+        logseq.App.showMsg(`Syncing pages: ${pagesProcessed}/${allPages.length}`, 'info');
       }
       
-      // Get all blocks for this page
-      const pageBlocksTree = await logseq.Editor.getPageBlocksTree(page.name);
-      
-      // Process blocks recursively and collect them in the batch
-      await processBlocksRecursively(pageBlocksTree, graph.name, blockBatch, batchSize);
-      
-      // Update blocks processed count
-      const pageBlockCount = countBlocksInTree(pageBlocksTree);
-      blocksProcessed += pageBlockCount;
-      
-      // Show progress for blocks every 100 blocks
-      if (blocksProcessed % 100 === 0) {
-        logseq.App.showMsg(`Processed ${blocksProcessed} blocks so far...`, 'info');
+      // Process blocks for these pages
+      for (const page of filteredBatch) {
+        const pageBlocksTree = await logseq.Editor.getPageBlocksTree(page.name);
+        if (pageBlocksTree) {
+          await processBlocksRecursively(pageBlocksTree, graphName, [], 100);
+          const pageBlockCount = countBlocksInTree(pageBlocksTree);
+          blocksProcessed += pageBlockCount;
+          
+          if (blocksProcessed % 100 === 0) {
+            logseq.App.showMsg(`Processed ${blocksProcessed} blocks so far...`, 'info');
+          }
+        }
       }
     }
-    
-    // Send any remaining pages in the batch
-    if (pageBatch.length > 0) {
-      await sendBatchToBackend('page', pageBatch, graph.name);
-    }
-    
-    // Send any remaining blocks in the batch
-    if (blockBatch.length > 0) {
-      await sendBatchToBackend('block', blockBatch, graph.name);
-    }
-    
+
     // Display validation summary if there were issues
     const summary = validationIssues.getSummary();
     if (summary.totalBlockIssues > 0 || summary.totalPageIssues > 0) {
@@ -703,6 +310,19 @@ async function syncFullDatabase() {
       logseq.App.showMsg('Full database sync completed successfully!', 'success');
     }
     
+    // Update sync timestamp
+    await updateSyncTimestamp();
+    
+    // --- Summary Log ---
+    // Print a summary indicating how many pages and blocks were updated and errors
+    console.log('--- Logseq Knowledge Graph Sync Summary ---');
+    console.log(`Pages synced: ${pagesProcessed}`);
+    console.log(`Blocks synced: ${blocksProcessed}`);
+    console.log(`Page errors: ${summary.totalPageIssues || 0}`);
+    console.log(`Block errors: ${summary.totalBlockIssues || 0}`);
+    console.log('------------------------------------------');
+    // --- End Summary Log ---
+    
     return true;
   } catch (error) {
     console.error('Error during full database sync:', error);
@@ -716,9 +336,20 @@ async function processBlocksRecursively(blocks, graphName, blockBatch, batchSize
   if (!blocks || !Array.isArray(blocks)) return;
   
   for (const block of blocks) {
-    // Process this block
-    const blockData = await processBlockData(block);
-    if (blockData) {
+    try {
+      // Skip blocks without UUIDs
+      if (!block.uuid) {
+        console.warn('Skipping block without UUID');
+        continue;
+      }
+      
+      // Process this block
+      const blockData = await processBlockData(block);
+      if (!blockData) {
+        console.warn(`Skipping block ${block.uuid} - processing returned null`);
+        continue;
+      }
+      
       const validation = validateBlockData(blockData);
       if (validation.valid) {
         // Add to block batch instead of sending immediately
@@ -730,34 +361,25 @@ async function processBlocksRecursively(blocks, graphName, blockBatch, batchSize
           blockBatch.length = 0; // Reset batch more efficiently
         }
       } else {
+        console.error(`Invalid block data for ${block.uuid}:`, validation.errors);
         validationIssues.addBlockIssue(blockData.id, blockData.page, validation.errors);
       }
-    }
-    
-    // Process children recursively
-    if (block.children && block.children.length > 0) {
-      await processBlocksRecursively(block.children, graphName, blockBatch, batchSize);
+      
+      // Process children recursively
+      if (block.children && block.children.length > 0) {
+        await processBlocksRecursively(block.children, graphName, blockBatch, batchSize);
+      }
+    } catch (blockError) {
+      console.error(`Error processing block ${block.uuid}:`, blockError);
+      // Continue with other blocks even if one fails
     }
   }
 }
 
 // Send a batch of data to the backend
 async function sendBatchToBackend(type, batch, graphName) {
-  if (batch.length === 0) return;
-  
-  console.log(`Sending batch of ${batch.length} ${type}s to backend`);
-  
-  try {
-    await sendToBackend({
-      source: 'Full Sync',
-      timestamp: new Date().toISOString(),
-      graphName: graphName,
-      type_: `${type}_batch`,
-      payload: JSON.stringify(batch)
-    });
-  } catch (error) {
-    console.error(`Error sending ${type} batch:`, error);
-  }
+  // Use the global KnowledgeGraphAPI object's sendBatchToBackend function
+  return KnowledgeGraphAPI.sendBatchToBackend(type, batch, graphName);
 }
 
 // Count blocks in a tree (for progress reporting)
@@ -775,191 +397,29 @@ function countBlocksInTree(blocks) {
   return count;
 }
 
+//=============================================================================
+// SYNC STATUS MANAGEMENT
+//=============================================================================
+
 // Check if a full sync is needed by querying the backend
 async function checkIfFullSyncNeeded() {
-  console.log('Checking if full sync is needed...');
-  try {
-    // Check if backend is available
-    const backendAvailable = await checkBackendAvailability();
-    if (!backendAvailable) {
-      console.log('Backend not available, skipping full sync check');
-      return false;
-    }
-    
-    // Query the backend for sync status
-    const response = await fetch('http://127.0.0.1:3000/sync/status', {
-      method: 'GET',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-    });
-    
-    if (!response.ok) {
-      console.error('Error getting sync status from backend');
-      return false;
-    }
-    
-    const status = await response.json();
-    console.log('Sync status from backend:', status);
-    
-    // Removed redundant diagnostic message
-    // await sendDiagnosticInfo('Sync status from backend', status);
-    
-    // Return whether a full sync is needed
-    return status.full_sync_needed === true;
-  } catch (error) {
-    console.error('Error checking if full sync is needed:', error);
-    await sendDiagnosticInfo('Error checking if full sync needed', { 
-      error: error.message,
-      stack: error.stack
-    });
-    return false;
-  }
+  // Use the global KnowledgeGraphAPI object's checkIfFullSyncNeeded function
+  return KnowledgeGraphAPI.checkIfFullSyncNeeded();
 }
 
 // Update the sync timestamp on the backend
 async function updateSyncTimestamp() {
-  try {
-    const response = await fetch('http://127.0.0.1:3000/sync/update', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-    });
-    
-    if (!response.ok) {
-      console.error('Error updating sync timestamp on backend');
-      return false;
-    }
-    
-    const result = await response.json();
-    console.log('Sync timestamp updated:', result);
-    
-    // Removed redundant diagnostic message
-    // await sendDiagnosticInfo('Sync timestamp updated', result);
-    
-    return result.success === true;
-  } catch (error) {
-    console.error('Error updating sync timestamp:', error);
-    await sendDiagnosticInfo('Error updating sync timestamp', { 
-      error: error.message,
-      stack: error.stack
-    });
-    return false;
-  }
+  // Use the global KnowledgeGraphAPI object's updateSyncTimestamp function
+  return KnowledgeGraphAPI.updateSyncTimestamp();
 }
+
+//=============================================================================
+// PLUGIN INITIALIZATION
+//=============================================================================
 
 // Main function for plugin logic
 async function main() {
   console.log('Knowledge Graph Plugin initializing...');
-
-  // Register a command to test reference extraction
-  logseq.Editor.registerSlashCommand('Test References', async () => {
-    const currentBlock = await logseq.Editor.getCurrentBlock();
-    if (!currentBlock) {
-      logseq.App.showMsg('No current block found.', 'warning');
-      return;
-    }
-    
-    // Get the full block entity
-    const blockEntity = await logseq.Editor.getBlock(currentBlock.uuid);
-    console.log('Block entity:', blockEntity);
-    
-    // Extract references using our unified regex method
-    console.log('--- REFERENCE EXTRACTION ---');
-    const references = extractReferencesFromContent(blockEntity.content);
-    console.log('References extracted:', references);
-    
-    // Display a summary to the user
-    if (references.length > 0) {
-      const summary = `Found ${references.length} references:
-        - Page refs: ${references.filter(r => r.type === 'page').length}
-        - Block refs: ${references.filter(r => r.type === 'block').length}
-        - Tags: ${references.filter(r => r.type === 'tag').length}
-        - Properties: ${references.filter(r => r.type === 'property').length}`;
-      
-      logseq.App.showMsg(summary, 'info');
-      
-      // Send the references to the backend for analysis
-      const graph = await logseq.App.getCurrentGraph();
-      await sendToBackend({
-        source: 'Test References Command',
-        timestamp: new Date().toISOString(),
-        graphName: graph ? graph.name : 'unknown',
-        type_: 'test_references',  
-        payload: JSON.stringify({
-          blockId: blockEntity.uuid,
-          content: blockEntity.content,
-          references: references
-        })
-      });
-    } else {
-      logseq.App.showMsg('No references found in this block.', 'info');
-    }
-  });
-
-  // Register a command to manually sync the current page
-  logseq.Editor.registerSlashCommand('Sync Current Page', async () => {
-    const currentPage = await logseq.Editor.getCurrentPage();
-    if (!currentPage) {
-      logseq.App.showMsg('No current page found.', 'warning');
-      return;
-    }
-    
-    logseq.App.showMsg(`Syncing page: ${currentPage.name}...`, 'info');
-    
-    const pageData = await processPageData(currentPage);
-    if (pageData) {
-      const validation = validatePageData(pageData);
-      if (validation.valid) {
-        const graph = await logseq.App.getCurrentGraph();
-        await sendToBackend({
-          source: 'Manual Sync',
-          timestamp: new Date().toISOString(),
-          graphName: graph ? graph.name : 'unknown',
-          type_: 'page',
-          payload: JSON.stringify(pageData)
-        });
-      } else {
-        console.error('Invalid page data:', validation.errors);
-        validationIssues.addPageIssue(pageData.name, validation.errors);
-        await sendDiagnosticInfo('Invalid page data', { 
-          errors: validation.errors,
-          pageData: pageData
-        });
-      }
-      
-      // Get all blocks for this page
-      const pageBlocksTree = await logseq.Editor.getPageBlocksTree(currentPage.name);
-      
-      // Process blocks recursively
-      await processBlocksRecursively(pageBlocksTree, graph ? graph.name : 'unknown');
-      
-      logseq.App.showMsg(`Page ${currentPage.name} synced successfully!`, 'success');
-    } else {
-      logseq.App.showMsg(`Failed to sync page ${currentPage.name}.`, 'error');
-    }
-  });
-  
-  // Register a command to perform a full database sync
-  logseq.Editor.registerSlashCommand('Full Database Sync', async () => {
-    const backendAvailable = await checkBackendAvailability();
-    if (!backendAvailable) {
-      logseq.App.showMsg('Backend server not available. Start the server first.', 'error');
-      return;
-    }
-    
-    logseq.App.showMsg('Starting full database sync. This may take a while...', 'info');
-    
-    const success = await syncFullDatabase();
-    
-    if (success) {
-      await updateSyncTimestamp();
-      logseq.App.showMsg('Full database sync completed successfully!', 'success');
-    } else {
-      logseq.App.showMsg('Full database sync failed. Check console for details.', 'error');
-    }
-  });
 
   // Register a command to check sync status
   logseq.Editor.registerSlashCommand('Check Sync Status', async () => {
@@ -1027,11 +487,6 @@ async function main() {
   console.log('Setting timeout to check for full sync in 5 seconds...');
   setTimeout(async () => {
     console.log('Timeout fired, checking if full sync is needed...');
-    
-    // Removed redundant diagnostic message
-    // await sendDiagnosticInfo('Sync check timeout fired', { 
-    //   time: new Date().toISOString() 
-    // });
     
     const needsFullSync = await checkIfFullSyncNeeded();
     
