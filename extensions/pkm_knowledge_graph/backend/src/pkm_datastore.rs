@@ -1,3 +1,47 @@
+/**
+ * @module pkm_datastore
+ * @description Persistent storage and knowledge graph management for PKM data
+ * 
+ * This module provides the core data structures and logic for storing, retrieving, and
+ * managing knowledge graph data from PKM. It handles the persistence of nodes (pages and blocks)
+ * and the relationships between them (references), maintaining a structured representation
+ * of the PKM graph.
+ * 
+ * Key responsibilities:
+ * - Defining the core data structures for the knowledge graph (Node, Reference)
+ * - Managing the persistence of graph data to/from disk
+ * - Processing incoming PKM data and converting it to our internal format
+ * - Tracking relationships between nodes (page references, block references, tags)
+ * - Maintaining mappings between PKM IDs and our internal IDs
+ * - Handling sync status and determining when full syncs are needed
+ * 
+ * The module centers around the PKMDatastore struct, which manages the complete state
+ * of the knowledge graph and provides methods for creating, updating, and querying nodes
+ * and references.
+ * 
+ * Core data structures:
+ * - Node: Represents a page or block in the knowledge graph
+ * - Reference: Represents a directional relationship between nodes
+ * - DatastoreState: Contains the complete state of the knowledge graph
+ * - PKMDatastore: Manages the storage and retrieval of knowledge graph data
+ * 
+ * External data structures:
+ * - PKMBlockData: Represents block data received from the PKM plugin
+ * - PKMPageData: Represents page data received from the PKM plugin
+ * - PKMReference: Represents a reference within PKM content
+ * 
+ * Dependencies:
+ * - serde: For serialization/deserialization of JSON data
+ * - chrono: For timestamp handling
+ * - uuid: For generating unique identifiers
+ * - thiserror: For error handling
+ * 
+ * @requires serde
+ * @requires chrono
+ * @requires uuid
+ * @requires thiserror
+ */
+
 use std::collections::HashMap;
 use std::fs::{self, File};
 use std::io::{self, Read, Write};
@@ -7,7 +51,7 @@ use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 use thiserror::Error;
 
-/// Errors that can occur when working with the Logseq datastore
+/// Errors that can occur when working with the PKM datastore
 #[derive(Error, Debug)]
 pub enum DatastoreError {
     #[error("IO error: {0}")]
@@ -32,10 +76,10 @@ pub type DatastoreResult<T> = Result<T, DatastoreError>;
 /// Type of node in the knowledge graph
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub enum NodeType {
-    /// A Logseq page
+    /// A PKM page
     Page,
     
-    /// A Logseq block
+    /// A PKM block
     Block,
 }
 
@@ -45,8 +89,8 @@ pub struct Node {
     /// Our internal unique identifier
     pub id: String,
     
-    /// Original Logseq identifier (UUID for blocks, name for pages)
-    pub logseq_id: String,
+    /// Original PKM identifier (UUID for blocks, name for pages)
+    pub pkm_id: String,
     
     /// Type of node (Page or Block)
     pub kind: NodeType,
@@ -130,10 +174,10 @@ pub struct DatastoreState {
     /// All references between nodes
     references: Vec<Reference>,
     
-    /// Mapping from Logseq block UUIDs to our internal node IDs
+    /// Mapping from PKM block UUIDs to our internal node IDs
     block_id_map: HashMap<String, String>,
     
-    /// Mapping from Logseq page names to our internal node IDs
+    /// Mapping from PKM page names to our internal node IDs
     page_name_map: HashMap<String, String>,
     
     /// Metadata about the datastore
@@ -142,7 +186,7 @@ pub struct DatastoreState {
 }
 
 /// Manages the storage and retrieval of knowledge graph data
-pub struct LogseqDatastore {
+pub struct PKMDatastore {
     /// Base directory for storing data
     data_dir: PathBuf,
     
@@ -150,7 +194,7 @@ pub struct LogseqDatastore {
     state: DatastoreState,
 }
 
-impl LogseqDatastore {
+impl PKMDatastore {
     /// Create a new datastore with the given data directory
     pub fn new<P: AsRef<Path>>(data_dir: P) -> DatastoreResult<Self> {
         let data_dir = data_dir.as_ref().to_path_buf();
@@ -222,55 +266,16 @@ impl LogseqDatastore {
         Ok(())
     }
     
-    // pub fn get_node(&self, id: &str) -> DatastoreResult<&Node> {
-    //     self.state.nodes.get(id)
-    //         .ok_or_else(|| DatastoreError::NodeNotFound(id.to_string()))
-    // }
-    
-    // pub fn get_node_by_logseq_block_id(&self, logseq_id: &str) -> DatastoreResult<&Node> {
-    //     let node_id = self.state.block_id_map.get(logseq_id)
-    //         .ok_or_else(|| DatastoreError::NodeNotFound(format!("Block UUID: {}", logseq_id)))?;
-        
-    //     self.get_node(node_id)
-    // }
-    
-    // pub fn get_node_by_logseq_page_name(&self, page_name: &str) -> DatastoreResult<&Node> {
-    //     let node_id = self.state.page_name_map.get(page_name)
-    //         .ok_or_else(|| DatastoreError::NodeNotFound(format!("Page name: {}", page_name)))?;
-        
-    //     self.get_node(node_id)
-    // }
-    
-    // pub fn get_all_nodes(&self) -> Vec<&Node> {
-    //     self.state.nodes.values().collect()
-    // }
-    
-    // pub fn get_all_references(&self) -> &[Reference] {
-    //     &self.state.references
-    // }
-    
-    // pub fn get_outgoing_references(&self, node_id: &str) -> Vec<&Reference> {
-    //     self.state.references.iter()
-    //         .filter(|r| r.source_id == node_id)
-    //         .collect()
-    // }
-    
-    // pub fn get_incoming_references(&self, node_id: &str) -> Vec<&Reference> {
-    //     self.state.references.iter()
-    //         .filter(|r| r.target_id == node_id)
-    //         .collect()
-    // }
-    
-    /// Create or update a node from Logseq block data
-    pub fn create_or_update_node_from_logseq_block(&mut self, block_data: &LogseqBlockData) -> DatastoreResult<String> {
-        let logseq_id = &block_data.id;
-        let node_id = self.state.block_id_map.get(logseq_id)
+    /// Create or update a node from PKM block data
+    pub fn create_or_update_node_from_pkm_block(&mut self, block_data: &PKMBlockData) -> DatastoreResult<String> {
+        let pkm_id = &block_data.id;
+        let node_id = self.state.block_id_map.get(pkm_id)
             .map_or_else(|| Uuid::new_v4().to_string(), std::clone::Clone::clone);
         
         // Create or update the node
         let node = Node {
             id: node_id.clone(),
-            logseq_id: logseq_id.clone(),
+            pkm_id: pkm_id.clone(),
             kind: NodeType::Block,
             content: block_data.content.clone(),
             created_at: parse_datetime(&block_data.created),
@@ -282,7 +287,7 @@ impl LogseqDatastore {
         
         // Update our mappings
         self.state.nodes.insert(node_id.clone(), node);
-        self.state.block_id_map.insert(logseq_id.clone(), node_id.clone());
+        self.state.block_id_map.insert(pkm_id.clone(), node_id.clone());
         
         // Process parent-child relationships
         if let Some(parent_id) = &block_data.parent {
@@ -332,8 +337,8 @@ impl LogseqDatastore {
         Ok(node_id)
     }
     
-    /// Create or update a node from Logseq page data
-    pub fn create_or_update_node_from_logseq_page(&mut self, page_data: &LogseqPageData) -> DatastoreResult<String> {
+    /// Create or update a node from PKM page data
+    pub fn create_or_update_node_from_pkm_page(&mut self, page_data: &PKMPageData) -> DatastoreResult<String> {
         let page_name = &page_data.name;
         let node_id = self.state.page_name_map.get(page_name)
             .map_or_else(|| Uuid::new_v4().to_string(), std::clone::Clone::clone);
@@ -341,7 +346,7 @@ impl LogseqDatastore {
         // Create or update the node
         let node = Node {
             id: node_id.clone(),
-            logseq_id: page_name.clone(),
+            pkm_id: page_name.clone(),
             kind: NodeType::Page,
             content: page_name.clone(),
             created_at: parse_datetime(&page_data.created),
@@ -384,7 +389,7 @@ impl LogseqDatastore {
         
         let node = Node {
             id: node_id.clone(),
-            logseq_id: page_name.to_string(),
+            pkm_id: page_name.to_string(),
             kind: NodeType::Page,
             content: page_name.to_string(),
             created_at: Utc::now(),
@@ -414,8 +419,8 @@ impl LogseqDatastore {
         }
     }
     
-    /// Resolve a Logseq reference to our internal IDs and add it to the datastore
-    fn resolve_and_add_reference(&mut self, source_node_id: &str, reference: &LogseqReference) -> DatastoreResult<()> {
+    /// Resolve a PKM reference to our internal IDs and add it to the datastore
+    fn resolve_and_add_reference(&mut self, source_node_id: &str, reference: &PKMReference) -> DatastoreResult<()> {
         match reference.r#type.as_str() {
             "page" => {
                 // Ensure the referenced page exists
@@ -443,7 +448,7 @@ impl LogseqDatastore {
                     
                     let node = Node {
                         id: target_node_id.clone(),
-                        logseq_id: reference.id.clone(),
+                        pkm_id: reference.id.clone(),
                         kind: NodeType::Block,
                         content: String::new(), // Placeholder content
                         created_at: Utc::now(),
@@ -542,10 +547,10 @@ impl LogseqDatastore {
     }
 }
 
-/// Data structures for Logseq data received from the plugin
+/// Data structures for PKM data received from the plugin
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
-pub struct LogseqBlockData {
+pub struct PKMBlockData {
     pub id: String,
     pub content: String,
     #[serde(deserialize_with = "deserialize_timestamp")]
@@ -561,10 +566,10 @@ pub struct LogseqBlockData {
     #[serde(default)]
     pub properties: serde_json::Value,
     #[serde(default)]
-    pub references: Vec<LogseqReference>,
+    pub references: Vec<PKMReference>,
 }
 
-impl LogseqBlockData {
+impl PKMBlockData {
     /// Validate the block data to ensure it meets our requirements
     pub fn validate(&self) -> Result<(), String> {
         let mut errors = Vec::new();
@@ -604,7 +609,7 @@ impl LogseqBlockData {
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
-pub struct LogseqPageData {
+pub struct PKMPageData {
     pub name: String,
     #[serde(deserialize_with = "deserialize_timestamp")]
     pub created: String,
@@ -616,7 +621,7 @@ pub struct LogseqPageData {
     pub blocks: Vec<String>,
 }
 
-impl LogseqPageData {
+impl PKMPageData {
     /// Validate the page data to ensure it meets our requirements
     pub fn validate(&self) -> Result<(), String> {
         let mut errors = Vec::new();
@@ -645,7 +650,7 @@ impl LogseqPageData {
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
-pub struct LogseqReference {
+pub struct PKMReference {
     #[serde(rename = "type")]
     pub r#type: String,
     #[serde(default)]
@@ -702,7 +707,7 @@ where
 
 // Helper functions
 
-/// Parse a datetime string from Logseq
+/// Parse a datetime string from PKM
 fn parse_datetime(datetime_str: &str) -> DateTime<Utc> {
     // Try parsing with different formats
     if let Ok(dt) = DateTime::parse_from_rfc3339(datetime_str) {

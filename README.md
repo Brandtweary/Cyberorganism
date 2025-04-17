@@ -4,6 +4,12 @@
 
 Cyberorganism is a specialized chat interface for knowledge graphs, built as a fork of [AIChat](https://github.com/sigoden/aichat). It enhances AIChat's capabilities with features specifically designed for interacting with and navigating knowledge graphs.
 
+All Cyberorganism-specific code is isolated in the `extensions` directory, making it easy to maintain compatibility with the upstream AIChat project. Each extension provides specific functionality that enhances the core capabilities of the base application.
+
+### Available Extensions
+
+- [PKM Knowledge Graph](./extensions/pkm_knowledge_graph) - Enables AI agents to access and query knowledge graphs populated from Personal Knowledge Management (PKM) tools like Logseq, providing RAG capabilities with the user's personal knowledge base.
+
 ## Install
 
 ### From Source

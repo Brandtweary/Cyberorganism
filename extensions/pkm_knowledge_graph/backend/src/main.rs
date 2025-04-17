@@ -1,3 +1,43 @@
+/**
+ * @module main
+ * @description Backend server for the PKM Knowledge Graph Plugin
+ * 
+ * This module implements an HTTP server that receives data from the PKM frontend plugin,
+ * processes it, and stores it in a persistent knowledge graph datastore. It serves as the
+ * backend component of the PKM Knowledge Graph extension.
+ * 
+ * Key responsibilities:
+ * - Setting up and running the HTTP server using the Axum framework
+ * - Defining API endpoints for data reception and sync status management
+ * - Processing incoming PKM data (blocks, pages, and their references)
+ * - Managing the PKMDatastore for persistent storage
+ * - Handling server lifecycle (startup, shutdown, port management)
+ * - Configuration loading and management
+ * - Process management (PID tracking, termination of previous instances)
+ * 
+ * API endpoints:
+ * - GET  /          : Root endpoint that confirms the server is running
+ * - POST /data      : Main endpoint for receiving data from the PKM plugin
+ * - GET  /sync/status: Returns the current sync status (timestamp, node count, etc.)
+ * - POST /sync/update: Updates the sync timestamp after a full sync
+ * 
+ * The server handles several types of data:
+ * - Individual blocks and pages
+ * - Batches of blocks and pages for efficient processing
+ * - Diagnostic information
+ * 
+ * Dependencies:
+ * - pkm_datastore: Module for persistent storage of the knowledge graph
+ * - axum: Web framework for handling HTTP requests
+ * - tokio: Async runtime
+ * - serde: Serialization/deserialization of JSON data
+ * 
+ * @requires pkm_datastore
+ * @requires axum
+ * @requires tokio
+ * @requires serde
+ */
+
 use axum::{
     extract::State,
     routing::{get, post},
@@ -15,12 +55,12 @@ use std::fs;
 use std::time::Duration;
 
 // Import our datastore module
-mod logseq_datastore;
-use logseq_datastore::{LogseqDatastore, LogseqBlockData, LogseqPageData};
+mod pkm_datastore;
+use pkm_datastore::{PKMDatastore, PKMBlockData, PKMPageData};
 
 // Application state that will be shared between handlers
 struct AppState {
-    datastore: Mutex<LogseqDatastore>,
+    datastore: Mutex<PKMDatastore>,
 }
 
 // Basic response for API calls
@@ -30,9 +70,9 @@ struct ApiResponse {
     message: String,
 }
 
-// Incoming data from the Logseq plugin
+// Incoming data from the PKM plugin
 #[derive(Deserialize, Debug)]
-struct LogseqData {
+struct PKMData {
     source: String,
     timestamp: String,
     // #[serde(rename = "graphName")]
@@ -123,7 +163,7 @@ fn load_config() -> Config {
 }
 
 // Constants
-const PID_FILE: &str = "logseq_knowledge_graph_server.pid";
+const PID_FILE: &str = "pkm_knowledge_graph_server.pid";
 
 // Check if a port is available
 fn is_port_available(port: u16) -> bool {
@@ -211,7 +251,7 @@ fn setup_exit_handler() {
 
 // Root endpoint
 async fn root() -> &'static str {
-    "Logseq Knowledge Graph Backend Server"
+    "PKM Knowledge Graph Backend Server"
 }
 
 // Endpoint to get sync status
@@ -247,17 +287,17 @@ async fn update_sync_timestamp(
 }
 
 // Helper functions for data parsing
-fn parse_block_data(payload: &str) -> Result<LogseqBlockData, serde_json::Error> {
-    serde_json::from_str::<LogseqBlockData>(payload)
+fn parse_block_data(payload: &str) -> Result<PKMBlockData, serde_json::Error> {
+    serde_json::from_str::<PKMBlockData>(payload)
 }
 
-fn parse_page_data(payload: &str) -> Result<LogseqPageData, serde_json::Error> {
-    serde_json::from_str::<LogseqPageData>(payload)
+fn parse_page_data(payload: &str) -> Result<PKMPageData, serde_json::Error> {
+    serde_json::from_str::<PKMPageData>(payload)
 }
 
 // Helper function for handling block data
 fn handle_block_data(state: Arc<AppState>, payload: &str) -> Result<String, String> {
-    // Parse the payload as a LogseqBlockData
+    // Parse the payload as a PKMBlockData
     let block_data = parse_block_data(payload)
         .map_err(|e| format!("Could not parse block data: {e}"))?;
     
@@ -269,7 +309,7 @@ fn handle_block_data(state: Arc<AppState>, payload: &str) -> Result<String, Stri
     // Process the block data
     let mut datastore = state.datastore.lock().unwrap();
     
-    match datastore.create_or_update_node_from_logseq_block(&block_data) {
+    match datastore.create_or_update_node_from_pkm_block(&block_data) {
         Ok(node_id) => {
             println!("Block processed successfully: {node_id}");
             let result = datastore.save_state()
@@ -287,7 +327,7 @@ fn handle_block_data(state: Arc<AppState>, payload: &str) -> Result<String, Stri
 
 // Helper function for handling page data
 fn handle_page_data(state: Arc<AppState>, payload: &str) -> Result<String, String> {
-    // Parse the payload as a LogseqPageData
+    // Parse the payload as a PKMPageData
     let page_data = parse_page_data(payload)
         .map_err(|e| format!("Could not parse page data: {e}"))?;
     
@@ -299,7 +339,7 @@ fn handle_page_data(state: Arc<AppState>, payload: &str) -> Result<String, Strin
     // Process the page data
     let mut datastore = state.datastore.lock().unwrap();
     
-    match datastore.create_or_update_node_from_logseq_page(&page_data) {
+    match datastore.create_or_update_node_from_pkm_page(&page_data) {
         Ok(node_id) => {
             println!("Page processed successfully: {node_id}");
             let result = datastore.save_state()
@@ -315,97 +355,10 @@ fn handle_page_data(state: Arc<AppState>, payload: &str) -> Result<String, Strin
     }
 }
 
-// Helper function for analyzing references
-fn analyze_references(references: &[serde_json::Value]) -> (i32, i32, i32, i32) {
-    let mut page_refs = 0;
-    let mut block_refs = 0;
-    let mut tags = 0;
-    let mut properties = 0;
-    
-    for ref_value in references {
-        if let Some(ref_obj) = ref_value.as_object() {
-            if let Some(ref_type) = ref_obj.get("type").and_then(|t| t.as_str()) {
-                match ref_type {
-                    "page" => {
-                        page_refs += 1;
-                    },
-                    "block" => {
-                        block_refs += 1;
-                    },
-                    "tag" => {
-                        tags += 1;
-                    },
-                    "property" => {
-                        properties += 1;
-                    },
-                    _ => {}
-                }
-            }
-        }
-    }
-    
-    (page_refs, block_refs, tags, properties)
-}
-
-// Helper function for printing reference summary
-fn print_reference_summary(page_refs: i32, block_refs: i32, tags: i32, properties: i32) {
-    println!("Reference summary:");
-    println!("  - Page refs: {page_refs}");
-    println!("  - Block refs: {block_refs}");
-    println!("  - Tags: {tags}");
-    println!("  - Properties: {properties}");
-}
-
-// Helper function for handling test references
-fn handle_test_references(payload: &str) -> Result<String, String> {
-    // Parse the payload as JSON
-    let json_value: serde_json::Value = serde_json::from_str(payload)
-        .map_err(|e| format!("Could not parse payload as JSON: {e}"))?;
-    
-    // Check if the JSON has a "references" field
-    if let Some(references) = json_value.get("references") {
-        if let Some(refs_array) = references.as_array() {
-            if refs_array.is_empty() {
-                println!("No references found in block");
-            } else {
-                let (page_refs, block_refs, tags, properties) = analyze_references(refs_array);
-                print_reference_summary(page_refs, block_refs, tags, properties);
-                
-                // Print additional debug info for the first reference
-                if !refs_array.is_empty() {
-                    println!("\nFirst reference details:");
-                    println!("  {}", serde_json::to_string_pretty(&refs_array[0]).unwrap_or_default());
-                    
-                    // Check for children
-                    if let Some(children) = json_value.get("children") {
-                        if let Some(arr) = children.as_array() {
-                            if !arr.is_empty() {
-                                println!("First child: {}", serde_json::to_string_pretty(&arr[0]).unwrap_or_default());
-                                println!("First child type: {}", 
-                                    if arr[0].is_string() { "string" }
-                                    else if arr[0].is_number() { "number" }
-                                    else if arr[0].is_object() { "object" }
-                                    else { "unknown" });
-                            }
-                        }
-                    }
-                }
-            }
-        } else {
-            println!("References field is not an array");
-        }
-    } else {
-        println!("No references found in block");
-    }
-    
-    println!("=== END TEST REFERENCES ===\n");
-    Ok("Test references processed".to_string())
-}
-
 // Helper function for handling default data
 fn handle_default_data(source: &str) -> Result<String, String> {
     // For DB changes, just acknowledge receipt without verbose logging
-    if source == "Logseq DB Change" {
+    if source == "PKM DB Change" {
         // Minimal logging for DB changes
         println!("Processing DB change event");
     } else {
@@ -417,8 +370,8 @@ fn handle_default_data(source: &str) -> Result<String, String> {
 
 // Helper function for handling batch block data
 fn handle_batch_blocks(state: Arc<AppState>, payload: &str) -> Result<String, String> {
-    // Parse the payload as an array of LogseqBlockData
-    let blocks: Vec<LogseqBlockData> = serde_json::from_str(payload)
+    // Parse the payload as an array of PKMBlockData
+    let blocks: Vec<PKMBlockData> = serde_json::from_str(payload)
         .map_err(|e| format!("Could not parse batch blocks: {e}"))?;
     
     println!("Processing batch of {} blocks", blocks.len());
@@ -433,7 +386,7 @@ fn handle_batch_blocks(state: Arc<AppState>, payload: &str) -> Result<String, St
     for block_data in blocks {
         // Validate and process each block
         if block_data.validate().is_ok() {
-            match datastore.create_or_update_node_from_logseq_block(&block_data) {
+            match datastore.create_or_update_node_from_pkm_block(&block_data) {
                 Ok(_) => {
                     success_count += 1;
                 },
@@ -468,8 +421,8 @@ fn handle_batch_blocks(state: Arc<AppState>, payload: &str) -> Result<String, St
 
 // Helper function for handling batch page data
 fn handle_batch_pages(state: Arc<AppState>, payload: &str) -> Result<String, String> {
-    // Parse the payload as an array of LogseqPageData
-    let pages: Vec<LogseqPageData> = serde_json::from_str(payload)
+    // Parse the payload as an array of PKMPageData
+    let pages: Vec<PKMPageData> = serde_json::from_str(payload)
         .map_err(|e| format!("Could not parse batch pages: {e}"))?;
     
     println!("Processing batch of {} pages", pages.len());
@@ -484,7 +437,7 @@ fn handle_batch_pages(state: Arc<AppState>, payload: &str) -> Result<String, Str
     for page_data in pages {
         // Validate and process each page
         if page_data.validate().is_ok() {
-            match datastore.create_or_update_node_from_logseq_page(&page_data) {
+            match datastore.create_or_update_node_from_pkm_page(&page_data) {
                 Ok(_) => {
                     success_count += 1;
                 },
@@ -517,10 +470,10 @@ fn handle_batch_pages(state: Arc<AppState>, payload: &str) -> Result<String, Str
     }
 }
 
-// Endpoint to receive data from the Logseq plugin
+// Endpoint to receive data from the PKM plugin
 async fn receive_data(
     State(state): State<Arc<AppState>>,
-    Json(data): Json<LogseqData>,
+    Json(data): Json<PKMData>,
 ) -> Json<ApiResponse> {
     // Log the source of the data
     println!("Received data from: {} at {}", data.source, data.timestamp);
@@ -591,22 +544,6 @@ async fn receive_data(
                 }
             }
         },
-        Some("test_references") => {
-            match handle_test_references(&data.payload) {
-                Ok(message) => {
-                    Json(ApiResponse {
-                        success: true,
-                        message,
-                    })
-                },
-                Err(message) => {
-                    Json(ApiResponse {
-                        success: false,
-                        message,
-                    })
-                }
-            }
-        },
         // For DB change events and other unspecified types
         _ => {
             match handle_default_data(&data.source) {
@@ -647,7 +584,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
     
     // Initialize the datastore
     let data_dir = PathBuf::from("data");
-    let datastore = LogseqDatastore::new(data_dir)
+    let datastore = PKMDatastore::new(data_dir)
         .map_err(|e| Box::<dyn Error>::from(format!("Datastore error: {e:?}")))?;
     
     // Create shared application state

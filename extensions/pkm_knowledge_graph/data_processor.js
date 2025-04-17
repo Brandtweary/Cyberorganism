@@ -1,6 +1,34 @@
 /**
- * Data Processing Module for Logseq Knowledge Graph Plugin
- * Handles data extraction, processing, and validation
+ * @module data_processor
+ * @description Data processing and validation layer for the Logseq Knowledge Graph Plugin
+ * 
+ * This module is responsible for extracting, processing, and validating data from the Logseq
+ * database before it's sent to the backend. It handles parsing Logseq's block and page data,
+ * extracting references (links, tags, etc.), and ensuring data integrity.
+ * 
+ * The module exposes its functionality through the global `window.KnowledgeGraphDataProcessor` 
+ * object, making these functions available to other parts of the plugin, particularly index.js.
+ * 
+ * Key responsibilities:
+ * - Extracting references from block content (page links, block refs, tags, properties)
+ * - Processing raw Logseq block and page data into structured formats for the backend
+ * - Validating data integrity before transmission to the backend
+ * - Tracking and categorizing validation issues for reporting
+ * 
+ * Public interfaces:
+ * - extractReferencesFromContent(content): Extracts all references from text using regex
+ * - processBlockData(block): Processes a Logseq block into a structured format
+ * - processPageData(page): Processes a Logseq page into a structured format
+ * - validateBlockData(blockData): Validates block data before sending to backend
+ * - validatePageData(pageData): Validates page data before sending to backend
+ * - validationIssues: Object for tracking and categorizing validation issues
+ *   - addBlockIssue(blockId, pageName, issues): Adds block validation issues
+ *   - addPageIssue(pageName, issues): Adds page validation issues
+ *   - getSummary(): Gets a summary of all validation issues
+ *   - reset(): Resets the validation issue tracker
+ * 
+ * Dependencies:
+ * - Logseq API: For retrieving block and page data
  */
 
 // Create a global object for data processing functions

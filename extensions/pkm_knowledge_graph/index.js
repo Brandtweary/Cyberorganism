@@ -1,4 +1,42 @@
 /**
+ * @module index
+ * @description Main entry point for the Logseq Knowledge Graph Plugin
+ * 
+ * This module orchestrates the entire plugin functionality, connecting Logseq to a Rust-based 
+ * knowledge graph backend. It handles initialization, event registration, data synchronization,
+ * and communication between the Logseq frontend and the Rust backend server.
+ * 
+ * Key responsibilities:
+ * - Plugin initialization and setup
+ * - Registering Logseq slash commands for user interaction
+ * - Setting up event listeners for database changes and page navigation
+ * - Coordinating data processing and validation through the KnowledgeGraphDataProcessor
+ * - Managing backend communication through the KnowledgeGraphAPI
+ * - Implementing full database sync and incremental sync logic
+ * - Handling batch processing of blocks and pages
+ * - Tracking and reporting validation issues
+ * 
+ * Public interfaces:
+ * - The plugin registers the following slash command in Logseq:
+ *   - "/Check Sync Status": Checks and displays the current sync status with the backend
+ * 
+ * The plugin automatically:
+ * - Monitors database changes via logseq.DB.onChanged
+ * - Tracks page navigation via logseq.App.onRouteChanged
+ * - Checks if a full sync is needed on startup
+ * 
+ * Dependencies:
+ * - api.js: Handles all HTTP communication with the backend
+ * - data_processor.js: Processes and validates Logseq data
+ * - config.js: Contains configuration settings
+ * 
+ * @requires api
+ * @requires config
+ * @requires KnowledgeGraphAPI
+ * @requires KnowledgeGraphDataProcessor
+ */
+
+/**
  * Logseq Knowledge Graph Plugin
  * Connects Logseq to a Rust-based knowledge graph backend
  */
@@ -41,12 +79,6 @@ async function testLogseqAPI() {
 // These functions now use the global KnowledgeGraphAPI object
 //=============================================================================
 
-// Send data to the backend server
-async function sendToBackend(data) {
-  // Use the global KnowledgeGraphAPI object's sendToBackend function
-  return KnowledgeGraphAPI.sendToBackend(data);
-}
-
 // Send diagnostic information to the backend server
 async function sendDiagnosticInfo(message, details = {}) {
   // Use the global KnowledgeGraphAPI object's sendDiagnosticInfo function
@@ -63,11 +95,6 @@ async function checkBackendAvailability() {
 // DATA PROCESSING & EXTRACTION
 // These functions now use the global KnowledgeGraphDataProcessor object
 //=============================================================================
-
-// Extract all references from content using regex
-function extractReferencesFromContent(content) {
-  return KnowledgeGraphDataProcessor.extractReferencesFromContent(content);
-}
 
 // Process block data and extract relevant information
 async function processBlockData(block) {
@@ -513,7 +540,7 @@ async function main() {
     }
   }, 5000); // Wait 5 seconds after initialization to check for sync
 
-  console.log('Knowledge Graph Plugin initialized. Try the /Test KG Plugin, /Sync Current Page, or /Full Database Sync commands.');
+  console.log('Knowledge Graph Plugin initialized. Try the /Check Sync Status command.');
 }
 
 // Initialize the plugin

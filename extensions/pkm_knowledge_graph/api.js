@@ -1,6 +1,36 @@
 /**
- * Logseq Knowledge Graph Plugin - API Module
- * Handles all communication with the Rust backend server
+ * @module api
+ * @description Communication layer for the Logseq Knowledge Graph Plugin
+ * 
+ * This module provides a comprehensive API for all communication between the Logseq frontend
+ * and the Rust backend server. It handles constructing API endpoints, sending data, checking
+ * server availability, and managing sync operations.
+ * 
+ * The module exposes its functionality through the global `window.KnowledgeGraphAPI` object,
+ * making these functions available to other parts of the plugin, particularly index.js.
+ * 
+ * Key responsibilities:
+ * - Constructing backend URLs for various endpoints
+ * - Sending data (blocks, pages, diagnostics) to the backend
+ * - Checking backend server availability
+ * - Managing sync status and operations
+ * - Handling batch operations for efficient data transfer
+ * - Error handling and reporting for network operations
+ * 
+ * Public interfaces:
+ * - getBackendUrl(endpoint): Constructs a complete backend URL for a given endpoint
+ * - sendToBackend(data): Sends data to the backend's /data endpoint
+ * - sendDiagnosticInfo(message, details): Sends diagnostic information to the backend
+ * - checkBackendAvailability(): Verifies if the backend server is running
+ * - checkIfFullSyncNeeded(): Determines if a full database sync is required
+ * - updateSyncTimestamp(): Updates the last sync timestamp on the backend
+ * - sendBatchToBackend(type, batch, graphName): Sends a batch of blocks or pages
+ * 
+ * Dependencies:
+ * - config.js: Contains backend configuration (host, port)
+ * - Logseq API: For displaying messages and getting graph information
+ * 
+ * @requires config
  */
 
 // Import configuration

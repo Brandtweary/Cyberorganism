@@ -15,14 +15,14 @@ The extensions folder is designed to keep our changes contained and clearly sepa
 The extensions directory is organized as follows:
 
 - `README.md` - This documentation file
-- `logseq_knowledge_graph/` - Integration between Logseq PKM and a knowledge graph
+- `pkm_knowledge_graph/` - Integration between a Personal Knowledge Management app (PKM) and a knowledge graph
 - (Future subdirectories will be added as needed for specific extension categories)
 
 ## Extensions
 
-### Logseq Knowledge Graph
+### PKM Knowledge Graph
 
-The `logseq_knowledge_graph` module provides integration between Logseq (a personal knowledge management system) and a graph database. It consists of:
+The `pkm_knowledge_graph` module provides integration between a PKM app and a knowledge graph. It consists of:
 
 - A Logseq plugin that exports block and page data
 - A Rust backend server that receives and stores the data
@@ -34,7 +34,7 @@ For testing purposes, we use a `logseq_dummy_graph` instance that contains sampl
 
 The extension uses its own configuration file separate from the main AIChat configuration:
 
-1. Copy `extensions/logseq_knowledge_graph/config.example.yaml` to `extensions/logseq_knowledge_graph/config.yaml`
+1. Copy `extensions/pkm_knowledge_graph/config.example.yaml` to `extensions/pkm_knowledge_graph/config.yaml`
 2. Edit the settings as needed:
    ```yaml
    backend:
